@@ -271,7 +271,11 @@ export class LiveAPI
     }
 
     this.isPolling = false;
-    loginfolive('已停止直播监听');
+
+    // 清理数据以释放内存
+    this.currentLiveUsers = [];
+
+    loginfolive('已停止直播监听并清理缓存');
   }
 
   /**

@@ -415,7 +415,11 @@ export class DynamicAPI
     }
 
     this.isPolling = false;
-    loginfolive('已停止动态监听');
+
+    // 清理数据以释放内存
+    this.recentDynamics = [];
+
+    loginfolive('已停止动态监听并清理缓存');
   }
 
   /**
@@ -550,6 +554,9 @@ export class DynamicAPI
         this.recentDynamics = Array.from(uniqueSummaries.values())
           .sort((a, b) => b.timestamp - a.timestamp)
           .slice(0, this.maxRecentCount);
+
+        // 清理 Map 以释放内存
+        uniqueSummaries.clear();
 
         // 保存更新后的数据
         this.saveRecentDynamics();

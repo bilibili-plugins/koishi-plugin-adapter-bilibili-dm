@@ -74,13 +74,14 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   static MessageEncoder = BilibiliMessageEncoder;
 
   private lastPollTs: number = 0; // 毫秒
-  private processedMsgIds: Set<string> = new Set();
+  private processedMsgIds: Map<string, number> = new Map(); // 改用 Map 存储消息ID和时间戳
   private readonly _maxCacheSize: number;
   private cleanupFunctions: Array<() => void> = [];
   private isStopping: boolean = false;
   private botOnlineTimestamp: number = 0;
   private consecutiveFailures: number = 0;
   private currentPollInterval: number;
+  private readonly _msgIdExpireTime: number = 3600000; // 消息ID过期时间：1小时
 
   public readonly http: HttpClient;
   public readonly pluginConfig: PluginConfig;
@@ -185,7 +186,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
         }
       }
 
-      // 关闭插件     
+      // 关闭插件
       loggerError(`正在关闭插件...`);
       this.ctx.scope.dispose();
 
@@ -525,12 +526,30 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       return;
     }
 
-    this.processedMsgIds.add(msgId);
+    // 使用 Map 存储消息ID和时间戳，便于按时间清理
+    this.processedMsgIds.set(msgId, Date.now());
 
+    // 当缓存超过限制时，删除最旧的条目
     if (this.processedMsgIds.size > this._maxCacheSize)
     {
-      const oldestId = this.processedMsgIds.values().next().value;
-      this.processedMsgIds.delete(oldestId);
+      // 找到最旧的条目并删除
+      let oldestId: string | null = null;
+      let oldestTime = Infinity;
+
+      for (const [id, timestamp] of this.processedMsgIds.entries())
+      {
+        if (timestamp < oldestTime)
+        {
+          oldestTime = timestamp;
+          oldestId = id;
+        }
+      }
+
+      if (oldestId)
+      {
+        this.processedMsgIds.delete(oldestId);
+        logInfo(`清理旧消息ID: ${oldestId}, 当前缓存大小: ${this.processedMsgIds.size}`);
+      }
     }
 
     let contentFragment: Fragment;
@@ -640,6 +659,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       this.startPolling();
       this.startDynamicPolling();
       this.startLivePolling();
+      this.startMessageIdCleanup(); // 启动消息ID清理定时器
 
       logInfo(`轮询已启动，机器人状态: ${this.status}`);
     }, 2000);
@@ -680,7 +700,62 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     }
     this.cleanupFunctions = [];
 
+    // 清空消息ID缓存
+    this.processedMsgIds.clear();
+    logInfo(`已清空消息ID缓存`);
+
     await super.stop();
+  }
+
+  /**
+   * 启动消息ID定期清理
+   */
+  private startMessageIdCleanup(): void
+  {
+    try
+    {
+      // 每10分钟清理一次过期的消息ID
+      const cleanupIntervalId = this.ctx.setInterval(() =>
+      {
+        if (!this.online || this.isStopping)
+        {
+          return;
+        }
+
+        const now = Date.now();
+        let cleanedCount = 0;
+
+        // 删除超过1小时的消息ID
+        for (const [id, timestamp] of this.processedMsgIds.entries())
+        {
+          if (now - timestamp > this._msgIdExpireTime)
+          {
+            this.processedMsgIds.delete(id);
+            cleanedCount++;
+          }
+        }
+
+        if (cleanedCount > 0)
+        {
+          logInfo(`定期清理: 删除了 ${cleanedCount} 个过期消息ID，当前缓存大小: ${this.processedMsgIds.size}`);
+        }
+      }, 600000); // 10分钟
+
+      this.addCleanup(() =>
+      {
+        try
+        {
+          cleanupIntervalId();
+          logInfo(`消息ID清理定时器已清除`);
+        } catch (err)
+        {
+          loggerError(`清除消息ID清理定时器时出错: `, err);
+        }
+      });
+    } catch (err)
+    {
+      loggerError(`设置消息ID清理定时器时出错: `, err);
+    }
   }
 
   async saveCookie(cookie: BilibiliCookie)
