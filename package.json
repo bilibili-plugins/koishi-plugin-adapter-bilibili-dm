@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-adapter-bilibili-dm",
-  "version": "2.5.4",
+  "version": "2.5.5",
   "description": "Bilibili Adapter for Koishi\n哔哩哔哩适配器",
   "typings": "lib/index.d.ts",
   "main": "lib/index.js",
@@ -13,7 +13,7 @@
   "license": "MIT",
   "author": "leafingxyz <2596628651@qq.com>",
   "contributors": [
-    "shangxueink <1919892171@qq.com>",
+    "shangxue <1919892171@qq.com>",
     "leafingxyz <2596628651@qq.com>"
   ],
   "bugs": {

@@ -34,9 +34,9 @@
 
 ## 文档
 
-详细使用说明请查看 
+详细使用说明请查看
 
--> https://roberta001.github.io/koishi-plugin-adapter-bilibili-dm/
+-> <https://roberta001.github.io/koishi-plugin-adapter-bilibili-dm/>
 
 ## 开发
 
@@ -54,4 +54,4 @@ yarn dev
 
 ## 项目鸣谢
 
-- https://github.com/SocialSisterYi/bilibili-API-collect
+- <https://github.com/SocialSisterYi/bilibili-API-collect>
