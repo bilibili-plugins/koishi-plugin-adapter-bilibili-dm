@@ -36,7 +36,7 @@ export const usage = `
 ---
 
 <p>Bilibili Direct Message Adapter for Koishi</p>
-<p>➣ <a href="https://roberta001.github.io/koishi-plugin-adapter-bilibili-dm/" target="_blank">点我查看使用说明</a></p>
+<p>➣ <a href="https://bilibili-plugins.github.io/koishi-plugin-adapter-bilibili-dm/" target="_blank">点我查看使用说明</a></p>
 
 ---
 
