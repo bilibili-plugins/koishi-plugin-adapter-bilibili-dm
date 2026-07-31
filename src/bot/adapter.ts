@@ -165,11 +165,16 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
         this.bots.push(bot);
       } else
       {
-        logInfo(`登录失败`);
-        this.service.updateStatus(pluginConfig.selfId, {
-          status: 'error',
-          message: '登录失败，请重试'
-        });
+        logInfo(`登录流程未完成，保留现有错误状态`);
+        const loginStatus = this.service.getStatus()[pluginConfig.selfId];
+        if (loginStatus?.status !== 'error')
+        {
+          loggerError(`登录流程未完成，但未返回具体错误状态`);
+          this.service.updateStatus(pluginConfig.selfId, {
+            status: 'error',
+            message: '登录失败，请查看后端日志'
+          });
+        }
         bot.offline();
       }
     } catch (error)

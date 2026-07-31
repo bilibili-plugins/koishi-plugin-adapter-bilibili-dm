@@ -312,7 +312,7 @@ export class BilibiliService
           // 扫码后仍保留二维码，等待手机确认登录完成。
           this.updateStatus(selfId, {
             status: 'qrcode',
-            message: '二维码已扫描，请在手机上完成登录',
+            message: '二维码已扫描，请在手机上确认登录',
             image: qrImageBase64,
           });
         } else if (pollResult.status === 'expired')
@@ -320,6 +320,14 @@ export class BilibiliService
           this.updateStatus(selfId, {
             status: 'error',
             message: '二维码已过期，请刷新页面重试',
+          });
+          return false;
+        }
+        else if (pollResult.status === 'error')
+        {
+          this.updateStatus(selfId, {
+            status: 'error',
+            message: pollResult.message,
           });
           return false;
         }

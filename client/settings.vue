@@ -34,7 +34,7 @@
       <template v-else-if="data.status === 'qrcode'">
         <div class="qrcode-instructions">
           <p v-if="data.message">{{ data.message }}</p>
-          <p>请在两分钟内使用手机端扫描并确认登录。</p>
+          <p v-if="data.message === '请使用手机扫描二维码'">请在两分钟内使用手机端扫描并确认登录。</p>
         </div>
         <div class="qrcode-container">
           <img v-if="data.image" class="qrcode" :src="data.image" alt="Bilibili 登录二维码" />

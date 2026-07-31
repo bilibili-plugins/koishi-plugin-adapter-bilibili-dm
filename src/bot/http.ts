@@ -318,8 +318,11 @@ export class HttpClient
       {
         return { status: 'waiting', message: '等待扫码' };
       }
-      return { status: 'waiting', message: '等待扫码' };
-    }, '[轮询] 轮询二维码状态时发生网络错误', { status: 'waiting', message: '网络错误，继续等待扫码' });
+      return {
+        status: 'error',
+        message: `二维码登录接口错误（${data.code}）：${data.message || '未知错误'}`,
+      };
+    }, '[轮询] 轮询二维码状态时发生网络错误', { status: 'error', message: '二维码状态请求失败，请查看后端日志' });
   }
 
   async getMyInfo(): Promise<{ nickname: string, avatar: string, isValid: boolean; }>
