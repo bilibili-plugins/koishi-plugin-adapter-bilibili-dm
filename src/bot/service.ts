@@ -135,6 +135,11 @@ export class BilibiliService
 
     try
     {
+      if (this.isDisposed)
+      {
+        return false;
+      }
+
       if (!this.status[selfId])
       {
         this.status[selfId] = {
@@ -163,6 +168,10 @@ export class BilibiliService
 
           bot.http.setCookies(cookieData);
           const userInfo = await bot.http.getMyInfo();
+          if (this.isDisposed)
+          {
+            return false;
+          }
           if (userInfo.isValid)
           {
             this.updateStatus(selfId, {
@@ -179,6 +188,10 @@ export class BilibiliService
             bot.http.setCookieVerified(true);
 
             await bot.start();
+            if (this.isDisposed)
+            {
+              return false;
+            }
             bot.online();
             return true;
           }
@@ -190,6 +203,11 @@ export class BilibiliService
           });
         } catch (error)
         {
+          if (this.isDisposed)
+          {
+            return false;
+          }
+
           loggerError('无法加载缓存的登录信息，错误详情: ', error);
           this.updateStatus(selfId, {
             status: 'continue',
@@ -206,6 +224,11 @@ export class BilibiliService
       }
 
       const qrData = await bot.http.getQrCodeData();
+      if (this.isDisposed)
+      {
+        return false;
+      }
+
       if (!qrData)
       {
         this.updateStatus(selfId, {
@@ -220,6 +243,10 @@ export class BilibiliService
         scale: 8,
         errorCorrectionLevel: 'H'
       });
+      if (this.isDisposed)
+      {
+        return false;
+      }
 
       this.updateStatus(selfId, {
         status: 'qrcode',
@@ -233,6 +260,10 @@ export class BilibiliService
       while (retryCount < maxRetries && !this.isDisposed)
       {
         const pollResult = await bot.http.pollQrCodeStatus(qrData.qrcode_key);
+        if (this.isDisposed)
+        {
+          return false;
+        }
 
         if (pollResult.status === 'success' && pollResult.cookies)
         {
@@ -243,9 +274,17 @@ export class BilibiliService
           };
           bot.http.setCookies(newCookie);
           await this.saveCookie(selfId, newCookie);
+          if (this.isDisposed)
+          {
+            return false;
+          }
           bot.http.setCookieVerified(true);
 
           const userInfo = await bot.http.getMyInfo();
+          if (this.isDisposed)
+          {
+            return false;
+          }
           this.updateStatus(selfId, {
             status: 'success',
             selfId,
@@ -260,6 +299,10 @@ export class BilibiliService
           loggerInfo(`已使用扫码登录，欢迎回来，${userInfo.nickname}`);
 
           await bot.start();
+          if (this.isDisposed)
+          {
+            return false;
+          }
           bot.online();
           return true;
         }
@@ -281,8 +324,24 @@ export class BilibiliService
           return false;
         }
 
-        await this.ctx.sleep(2000);
+        try
+        {
+          await this.ctx.sleep(2000);
+        }
+        catch (error)
+        {
+          if (this.isDisposed)
+          {
+            return false;
+          }
+          throw error;
+        }
         retryCount++;
+      }
+
+      if (this.isDisposed)
+      {
+        return false;
       }
 
       this.updateStatus(selfId, {
@@ -292,6 +351,11 @@ export class BilibiliService
       return false;
     } catch (error)
     {
+      if (this.isDisposed)
+      {
+        return false;
+      }
+
       loggerError('登录过程中发生错误: ', error);
       this.updateStatus(selfId, {
         status: 'error',

@@ -32,7 +32,10 @@
       </template>
 
       <template v-else-if="data.status === 'qrcode'">
-        <p v-if="data.message">{{ data.message }}</p>
+        <div class="qrcode-instructions">
+          <p v-if="data.message">{{ data.message }}</p>
+          <p>请在两分钟内使用手机端扫描并确认登录。</p>
+        </div>
         <div class="qrcode-container">
           <img v-if="data.image" class="qrcode" :src="data.image" alt="Bilibili 登录二维码" />
           <div class="refresh-overlay" v-if="qrCodeExpired">
@@ -227,7 +230,7 @@ function getCommentType(status?: string)
   .qrcode-container {
     position: relative;
     display: inline-block;
-    margin: 1rem 0;
+    margin: 1rem 0 0.35rem;
     border: 1px solid #eee;
     padding: 10px;
     border-radius: 8px;
@@ -239,6 +242,14 @@ function getCommentType(status?: string)
     display: block;
     max-width: 200px;
     image-rendering: pixelated;
+  }
+
+  .qrcode-instructions {
+    margin-bottom: 0.75rem;
+
+    p {
+      margin: 0.25rem 0;
+    }
   }
 
   .refresh-overlay {
@@ -257,7 +268,7 @@ function getCommentType(status?: string)
   }
 
   .qrcode-actions {
-    margin-top: 1rem;
+    margin-top: 0;
     display: flex;
     gap: 0.5rem;
   }

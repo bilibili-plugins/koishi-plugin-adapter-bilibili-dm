@@ -654,8 +654,13 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       this.status = Universal.Status.ONLINE;
     }
 
-    setTimeout(() =>
+    this.ctx.setTimeout(() =>
     {
+      if (this.isStopping || this.http.isDisposed)
+      {
+        return;
+      }
+
       this.startPolling();
       this.startDynamicPolling();
       this.startLivePolling();
