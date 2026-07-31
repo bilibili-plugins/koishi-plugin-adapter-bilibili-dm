@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-adapter-bilibili-dm",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Bilibili Adapter for Koishi\n哔哩哔哩适配器",
   "typings": "lib/index.d.ts",
   "main": "lib/index.js",
@@ -49,7 +49,7 @@
     },
     "preview": true,
     "hidden": false,
-    "service": {}
+    "service": { }
   },
   "peerDependencies": {
     "koishi": "^4.16.0"
