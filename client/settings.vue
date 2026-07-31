@@ -1,6 +1,6 @@
 <!-- external/adapter-bilibili-dm/client/settings.vue -->
 <template>
-  <div class="bilibili-dm-settings">
+  <div v-if="data" class="bilibili-dm-settings">
     <!-- 只有当 data 有值时才渲染 k-comment -->
     <k-comment v-if="data" :type="getCommentType(data.status)">
       <template v-if="data.status === 'offline'">
@@ -57,7 +57,6 @@
         </div>
       </template>
     </k-comment>
-
   </div>
 </template>
 
@@ -92,6 +91,12 @@ const data = computed(() =>
 {
   // 名称不匹配，返回 null，阻止组件渲染
   if (!local.value || local.value.name !== PLUGIN_NAME)
+  {
+    return null;
+  }
+
+  // 未启用的配置实例不显示适配器状态面板。
+  if (current.value?.disabled === true)
   {
     return null;
   }
