@@ -2,11 +2,10 @@
 import { getBilibiliErrorMessage } from './bilibiliAPI/temp_error_codes';
 import { DataService } from '@koishijs/plugin-console';
 import { BilibiliDmAdapter } from './bot/adapter';
-import { BilibiliTestPlugin } from './test/test';
 import { BilibiliService } from './bot/service';
 import { PluginConfig } from './bot/types';
 import { BilibiliDmBot } from './bot/bot';
-import { Context, Logger, sleep } from 'koishi';
+import { Context, Logger } from 'koishi';
 import { Config } from './bot/schema';
 
 import { promises as fs, existsSync } from 'node:fs';
@@ -17,8 +16,6 @@ export let loggerError: (message: any, ...args: any[]) => void;
 export let loggerInfo: (message: any, ...args: any[]) => void;
 export let logInfo: (message: any, ...args: any[]) => void;
 export let loginfolive: (message: any, ...args: any[]) => void;
-
-let isConsoleEntryAdded = false;
 
 export const name = "adapter-bilibili-dm";
 export const inject = {
@@ -125,7 +122,7 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
   constructor(ctx: Context, private service: BilibiliService, config: PluginConfig)
   {
     const serviceId = `bilibili-dm-${config.selfId}`;
-    super(ctx, serviceId as keyof import('@koishijs/plugin-console').Console.Services);
+    super(ctx, serviceId as keyof import('@koishijs/plugin-console').Console.Services, { immediate: true });
     this.serviceId = serviceId;
     this.currentBot = config.selfId;
 
@@ -147,10 +144,9 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
     // 立即刷新前端
     this.refresh();
 
-    // 前端发来的登录请求
     const loginEventName = `bilibili-dm-${config.selfId}/start-login` as const;
 
-    ctx.console.addListener(loginEventName, async (data: { selfId: string; }) =>
+    const loginListener = async (data: { selfId: string; }) =>
     {
       const selfId = data.selfId || config.selfId;
       this.currentBot = selfId;
@@ -188,6 +184,15 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
       await this.service.startLogin(bot, sessionFile);
 
       return { selfId };
+    };
+    ctx.console.addListener(loginEventName, loginListener);
+    ctx.on('dispose', () =>
+    {
+      // console 监听器不属于插件作用域，需要手动移除。
+      if (ctx.console.listeners[loginEventName]?.callback === loginListener)
+      {
+        delete ctx.console.listeners[loginEventName];
+      }
     });
   }
 
@@ -255,121 +260,75 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
 
 export function apply(ctx: Context, config: PluginConfig)
 {
-
-  ctx.on('ready', async () =>
+  const serviceId = `console.services.bilibili-dm-${config.selfId}`;
+  const existingLauncher = ctx.get(serviceId) as BilibiliLauncher | undefined;
+  if (existingLauncher)
   {
+    // 同一个 selfId 已有前端服务时，避免重复注册和重复启动机器人。
+    logger.info(`Bilibili ${config.selfId} 已存在前端服务，跳过重复初始化。`);
+    return;
+  }
 
-    if (process.env.NODE_ENV === 'development' && !__dirname.includes('node_modules'))
+  // 初始化全局函数
+  logInfo = (message: any, ...args: any[]) =>
+  {
+    if (config.loggerinfo)
     {
-      await sleep(1 * 1000);  // 神秘步骤，可以保佑dev模式
-      // ctx.plugin(BilibiliTestPlugin)
+      devlogger.info(message, ...args);
     }
-
-    // 初始化全局函数
-    logInfo = (message: any, ...args: any[]) =>
+  };
+  loggerInfo = (message: any, ...args: any[]) =>
+  {
+    logger.info(message, ...args);
+  };
+  loggerError = (message: any, ...args: any[]) =>
+  {
+    // 如果传入的是数字，认为是B站错误码
+    if (typeof message === 'number')
     {
-      if (config.loggerinfo)
-      {
-        devlogger.info(message, ...args);
-      }
-    };
-    loggerInfo = (message: any, ...args: any[]) =>
+      const errorMessage = getBilibiliErrorMessage(message);
+      logger.error(`错误码 [${message}]: ${errorMessage}`, ...args);
+    } else
     {
-      logger.info(message, ...args);
-    };
-    loggerError = (message: any, ...args: any[]) =>
-    {
-      // 如果传入的是数字，认为是B站错误码
-      if (typeof message === 'number')
-      {
-        const errorMessage = getBilibiliErrorMessage(message);
-        logger.error(`错误码 [${message}]: ${errorMessage}`, ...args);
-      } else
-      {
-        logger.error(message, ...args);
-      }
-    };
-    loginfolive = (message: any, ...args: any[]) =>
-    {
-      if (config.loggerLiveInfo)
-      {
-        devlogger.info(`[直播间] ${message}`, ...args);
-      }
-    };
-
-    // 创建服务
-    const service = new BilibiliService(ctx, config);
-
-    ctx.bilibili_dm_service = service;
-
-    if (!isConsoleEntryAdded)
-    {
-      isConsoleEntryAdded = true;
-      ctx.console.addEntry({
-        dev: resolve(__dirname, '../client/index.ts'),
-        prod: resolve(__dirname, '../dist'),
-      });
+      logger.error(message, ...args);
     }
-
-    // 创建 launcher 实例并保存引用
-    let launcher: BilibiliLauncher;
-    ctx.plugin({
-      name: `bilibili-launcher-${config.selfId}`,
-      apply: (ctx) =>
-      {
-        logInfo(`创建BilibiliLauncher实例，selfId: ${config.selfId}`);
-        launcher = new BilibiliLauncher(ctx, service, config);
-        // 将 launcher 引用传递给 service
-        service.setLauncher(launcher);
-        return launcher;
-      }
-    });
-
-    ctx.plugin(BilibiliDmAdapter, {
-      ...config,
-      selfId: config.selfId
-    });
-
-    ctx.on('dispose', () =>
+  };
+  loginfolive = (message: any, ...args: any[]) =>
+  {
+    if (config.loggerLiveInfo)
     {
-      isConsoleEntryAdded = false;
-      logInfo(`插件正在停用，执行清理操作`);
+      devlogger.info(`[直播间] ${message}`, ...args);
+    }
+  };
 
-      try
-      {
-        // 标记服务为已停用状态
-        service.markAsDisposed();
+  // 创建服务
+  const service = new BilibiliService(ctx, config);
 
-        // 找到当前插件实例对应的机器人并停止它
-        const botToStop = ctx.bots.find(bot => bot.platform === 'bilibili' && bot.selfId === config.selfId);
+  ctx.bilibili_dm_service = service;
 
-        if (botToStop)
-        {
-          logInfo(`正在停止当前插件实例对应的机器人: ${botToStop.selfId}`);
-          try
-          {
-            botToStop.stop();
-            botToStop.offline(); // 确保机器人状态为离线
-            logInfo(`机器人 ${botToStop.selfId} 已停止并设置为离线`);
-            botToStop.dispose(); // 彻底移除机器人实例
-            logInfo(`机器人 ${botToStop.selfId} 已被彻底移除`);
-          } catch (err)
-          {
-            logger.error(`停止机器人 ${botToStop.selfId} 失败: ${err.message}`);
-          }
-        } else
-        {
-          logInfo(`未找到当前插件实例对应的机器人，无需停止。`);
-        }
-
-        logInfo(`插件停用完成`);
-      } catch (err)
-      {
-        logger.error(`插件停用过程中发生错误: ${err.message}`);
-      }
-    });
-
+  // Entry 绑定当前作用域，卸载插件时自动移除。
+  ctx.console.addEntry({
+    dev: resolve(__dirname, '../client/index.ts'),
+    prod: resolve(__dirname, '../dist'),
   });
 
+  // 直接绑定当前作用域，避免 ready 回调延迟创建重复服务。
+  logInfo(`创建BilibiliLauncher实例，selfId: ${config.selfId}`);
+  const launcher = new BilibiliLauncher(ctx, service, config);
+  ctx.set(serviceId, launcher);
+  service.setLauncher(launcher);
+
+  ctx.plugin(BilibiliDmAdapter, {
+    ...config,
+    selfId: config.selfId
+  });
+
+  ctx.on('dispose', () =>
+  {
+    logInfo(`插件正在停用，执行清理操作`);
+    service.markAsDisposed();
+    // 机器人由适配器的 dispose 统一停止，避免重复调用。
+    logInfo(`插件停用完成，机器人交由适配器清理`);
+  });
   logger.info(`Bilibili 私信适配器启动。`);
 }
