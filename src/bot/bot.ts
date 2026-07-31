@@ -980,7 +980,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       message: {
         id: notification.id,
         content: notification.content,
-        elements: h.normalize(notification.content),
+        elements: this.parseCommentContent(notification.content),
         timestamp: notification.timestamp,
         quote: notification.parent !== notification.rpid ? {
           id: String(notification.parent),
@@ -994,6 +994,22 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     logInfo(`收到评论通知，频道: ${notification.channelId}，用户: ${notification.userId}，内容: ${notification.content}`);
     this.dispatch(session);
     logInfo(`评论 Session 已下发到 Koishi，消息ID: ${notification.id}`);
+  }
+
+  private parseCommentContent(content: string): h[]
+  {
+    const botName = this.user.name?.trim();
+    if (!botName) return h.normalize(content);
+
+    const escapedName = botName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const mentionPattern = new RegExp(`^@${escapedName}(?:[ \\t]+)`);
+    const mention = content.match(mentionPattern);
+    if (!mention) return h.normalize(content);
+
+    const elements: h[] = [h.at(this.selfId, { name: botName })];
+    const text = content.slice(mention[0].length);
+    if (text) elements.push(h.text(text));
+    return elements;
   }
 
   private preprocessContent(content: Fragment): Fragment
