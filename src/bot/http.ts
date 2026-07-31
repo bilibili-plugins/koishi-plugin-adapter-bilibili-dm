@@ -1,9 +1,10 @@
 //  src\http.ts
-import { BiliApiResponse, MyInfoData, QrCodeData, QrCodePollResult, UploadImageData, WbiKeys, NavWbiImg, NewSessionsData, SessionMessagesData, BiliSendMessageResponseData, BilibiliCookie } from './types';
-import { logInfo, loggerError, loggerInfo } from '../index';
+import { BiliApiResponse, BilibiliCookie, BiliSendMessageResponseData, NavWbiImg, NewSessionsData, QrCodeData, QrCodePollResult, SessionMessagesData, UploadImageData, WbiKeys } from './types';
+import { logInfo, loggerError } from '../index';
 import { BilibiliDmBot } from './bot';
 import { Context, Quester } from 'koishi';
 import { v4 as uuidv4 } from 'uuid';
+import { Client, Auth, WebQrcodeLogin, utils } from '@renmu/bili-api';
 
 import { createHash } from 'node:crypto';
 
@@ -11,89 +12,35 @@ const MIXIN_KEY_ENCODE_TABLE = [
   46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
   27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
   37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
-  22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52
+  22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
 
 export class HttpClient
 {
   private cookies: BilibiliCookie = {} as BilibiliCookie;
-  private biliJct: string = '';
+  private biliJct = '';
   private readonly deviceId: string;
   private wbiKeys: WbiKeys | null = null;
   private wbiKeysTimestamp = 0;
-  private wbiKeysFetchPromise: Promise<WbiKeys> | null = null; // 作为锁
-  private avatarBase64: boolean;
-  private selfId: string;
-  private cookieVerified: boolean = false;
+  private wbiKeysFetchPromise: Promise<WbiKeys> | null = null;
+  private avatarBase64 = true;
+  private selfId = 'unknown';
+  private cookieVerified = false;
+  private readonly renmuAuth: Auth;
+  private readonly renmuClient: Client;
 
   public http: Quester;
   public isDisposed = false;
 
-  private async safeRequest<T>(
-    requestFn: () => Promise<T>,
-    errorMessage: string,
-    defaultValue: T
-  ): Promise<T>
-  {
-    if (this.isDisposed)
-    {
-      logInfo(`HttpClient 实例已停用，跳过HTTP请求。`);
-      return defaultValue;
-    }
-
-    try
-    {
-      try
-      {
-        // 尝试执行一个简单的操作来检查
-        this.ctx.setTimeout(() => { }, 0);
-      } catch (err)
-      {
-        if (err.code === 'INACTIVE_EFFECT')
-        {
-          logInfo(`上下文已不活跃，跳过HTTP请求`);
-          this.isDisposed = true;
-          return defaultValue;
-        }
-      }
-
-      // 再次检查
-      if (this.isDisposed)
-      {
-        logInfo(`HttpClient 实例已停用，跳过HTTP请求。`);
-        return defaultValue;
-      }
-
-      // 执行实际请求
-      try
-      {
-        return await requestFn();
-      } catch (httpError)
-      {
-        if (httpError.message?.includes('context disposed') ||
-          httpError.code === 'INACTIVE_EFFECT')
-        {
-          this.isDisposed = true;
-          return defaultValue;
-        }
-        // 其他HTTP错误，继续抛出
-        throw httpError;
-      }
-    } catch (error)
-    {
-      loggerError(`${errorMessage}: ${error.message}`);
-      return defaultValue;
-    }
-  }
-
-  constructor(private ctx: Context, config?: any, private bot?: BilibiliDmBot)
+  constructor(private ctx: Context, config?: { selfId?: string; avatarBase64?: boolean; }, private bot?: BilibiliDmBot)
   {
     this.selfId = config?.selfId || (ctx.bilibili_dm_service)?.config?.selfId || 'unknown';
     const effectiveConfig = config || (ctx.bilibili_dm_service)?.config || {};
     this.avatarBase64 = effectiveConfig.avatarBase64 !== undefined ? effectiveConfig.avatarBase64 : true;
 
-    logInfo(`HttpClient初始化，avatarBase64=${this.avatarBase64}`);
-    logInfo(`HttpClient初始化，avatarBase64=${this.avatarBase64}, selfId=${this.selfId}`);
+    this.renmuAuth = new Auth();
+    this.renmuClient = new Client(this.renmuAuth, true);
+
     this.http = ctx.http.extend({
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -104,10 +51,72 @@ export class HttpClient
     });
     this.deviceId = this.generateDeviceId();
 
+    logInfo(`HttpClient初始化，avatarBase64=${this.avatarBase64}, selfId=${this.selfId}`);
+
     ctx.on('dispose', () =>
     {
       this.isDisposed = true;
     });
+  }
+
+  private async safeRequest<T>(requestFn: () => Promise<T>, errorMessage: string, defaultValue: T): Promise<T>
+  {
+    if (this.isDisposed)
+    {
+      logInfo('HttpClient 实例已停用，跳过HTTP请求。');
+      return defaultValue;
+    }
+
+    try
+    {
+      try
+      {
+        this.ctx.setTimeout(() => { }, 0);
+      } catch (error)
+      {
+        if (error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'INACTIVE_EFFECT')
+        {
+          logInfo('上下文已不活跃，跳过HTTP请求');
+          this.isDisposed = true;
+          return defaultValue;
+        }
+      }
+
+      return await requestFn();
+    } catch (error)
+    {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('context disposed'))
+      {
+        this.isDisposed = true;
+        return defaultValue;
+      }
+      loggerError(`${errorMessage}: ${message}`);
+      return defaultValue;
+    }
+  }
+
+  private syncRenmuAuth(): void
+  {
+    if (!this.cookies.SESSDATA || !this.cookies.bili_jct)
+    {
+      return;
+    }
+
+    const uid = Number(this.cookies.DedeUserID || this.selfId || 0);
+    this.renmuAuth.setAuth(
+      {
+        SESSDATA: this.cookies.SESSDATA,
+        bili_jct: this.cookies.bili_jct,
+        DedeUserID: this.cookies.DedeUserID || uid,
+      },
+      uid,
+    );
+  }
+
+  getRenmuClient(): Client
+  {
+    return this.renmuClient;
   }
 
   setCookies(cookies: BilibiliCookie)
@@ -132,23 +141,21 @@ export class HttpClient
       this.wbiKeysTimestamp = cookies.wbi_timestamp;
     }
 
+    this.syncRenmuAuth();
     logInfo(`成功设置cookie，长度: ${cookieString.length}`);
   }
 
-  // 检查cookie是否已设置并验证
   hasCookies(): boolean
   {
     return this.cookieVerified || !!(this.cookies && this.cookies.SESSDATA && this.cookies.bili_jct);
   }
 
-  // 设置cookie验证标志
   setCookieVerified(verified: boolean): void
   {
     this.cookieVerified = verified;
     logInfo(`Cookie验证状态设置为: ${verified}`);
   }
 
-  // #region WBI Signing
   private getMixinKey(orig: string): string
   {
     let temp = '';
@@ -162,12 +169,11 @@ export class HttpClient
     today.setHours(0, 0, 0, 0);
     const startOfToday = today.getTime();
 
-    // Check memory cache.
     if (this.wbiKeys && this.wbiKeysTimestamp >= startOfToday)
     {
       return this.wbiKeys;
     }
-    // Check file cache
+
     if (this.cookies.wbi_timestamp && this.cookies.wbi_img_key && this.cookies.wbi_sub_key && this.cookies.wbi_mixin_key)
     {
       if (this.cookies.wbi_timestamp >= startOfToday)
@@ -218,6 +224,7 @@ export class HttpClient
         logInfo('WBI密钥获取并缓存成功。');
         return this.wbiKeys;
       }
+
       throw new Error(`Failed to get WBI keys: ${res.message || 'Invalid response data'}`);
     }, '获取WBI密钥时发生网络错误', null).finally(() =>
     {
@@ -227,7 +234,7 @@ export class HttpClient
     return this.wbiKeysFetchPromise;
   }
 
-  private async signWithWbi(params: Record<string, any>): Promise<{ w_rid: string, wts: number; }>
+  private async signWithWbi(params: Record<string, string | number>): Promise<{ w_rid: string, wts: number; }>
   {
     await this.getWbiKeys();
     const mixinKey = this.cookies.wbi_mixin_key;
@@ -235,12 +242,12 @@ export class HttpClient
     {
       throw new Error('无法获取 mixinKey，请检查 WBI 密钥是否正确获取和缓存');
     }
-    const currTime = Math.round(Date.now() / 1000);
 
-    const signedParams: Record<string, any> = { ...params, wts: currTime };
-    const query = Object.keys(signedParams).sort().map(key =>
+    const currTime = Math.round(Date.now() / 1000);
+    const signedParams: Record<string, string | number> = { ...params, wts: currTime };
+    const query = Object.keys(signedParams).sort().map((key) =>
     {
-      const value = signedParams[key]?.toString().replace(/[!'()*]/g, '') || '';
+      const value = String(signedParams[key]).replace(/[!'()*]/g, '');
       return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
     }).join('&');
 
@@ -248,40 +255,44 @@ export class HttpClient
     return { w_rid: wbiSign, wts: currTime };
   }
 
-  // 公共方法用于获取WBI签名
-  async getWbiSignature(params: Record<string, any>): Promise<{ w_rid: string, wts: number; }>
+  async getWbiSignature(params: Record<string, string | number>): Promise<{ w_rid: string; wts: number; }>
   {
-    return this.signWithWbi(params);
+    const signedQuery = await utils.WbiSign({ ...params });
+    const searchParams = new URLSearchParams(signedQuery);
+    const w_rid = searchParams.get('w_rid');
+    const wts = searchParams.get('wts');
+
+    if (!w_rid || !wts)
+    {
+      throw new Error('新包返回的 WBI 签名结果缺少必要字段');
+    }
+
+    return { w_rid, wts: Number(wts) };
   }
 
-  // 获取CSRF token
   getBiliJct(): string
   {
     return this.biliJct;
   }
-  // #endregion
 
-  // #region Login & Auth
   async getQrCodeData(): Promise<QrCodeData | null>
   {
     return this.safeRequest(async () =>
     {
-      const res = await this.http.get<BiliApiResponse<QrCodeData>>('https://passport.bilibili.com/x/passport-login/web/qrcode/generate');
-      if (res.code === 0 && res.data) return res.data;
-      logInfo(`获取二维码失败: ${res.message}`);
-      return null;
+      const login = new WebQrcodeLogin();
+      const res = await login.getQrcode();
+      return { url: res.url, qrcode_key: res.qrcode_key };
     }, '获取二维码数据时发生网络错误', null);
   }
 
-  async pollQrCodeStatus(oauthKey: string): Promise<QrCodePollResult>
+  async pollQrCodeStatus(qrcodeKey: string): Promise<QrCodePollResult>
   {
     return this.safeRequest(async () =>
     {
-      const res = await this.http.get<BiliApiResponse<{ url: string, refresh_token: string, timestamp: number, code: number, message: string; }>>(
-        'https://passport.bilibili.com/x/passport-login/web/qrcode/poll',
-        { params: { qrcode_key: oauthKey } }
-      );
+      const login = new WebQrcodeLogin();
+      const res = await login.poll(qrcodeKey);
       const data = res.data;
+
       if (data.code === 0 && data.url)
       {
         const url = new URL(data.url);
@@ -293,9 +304,17 @@ export class HttpClient
           return { status: 'success', message: '登录成功', cookies: { SESSDATA, bili_jct, DedeUserID } };
         }
         return { status: 'expired', message: 'Cookie 解析失败' };
-      } else if (data.code === 86038) return { status: 'expired', message: '二维码已失效' };
-      else if (data.code === 86090) return { status: 'scanned', message: '已扫描，待确认' };
-      return { status: 'waiting', message: '等待扫描' };
+      }
+
+      if (data.code === 86038)
+      {
+        return { status: 'expired', message: '二维码已失效' };
+      }
+      if (data.code === 86090 || data.code === 86101)
+      {
+        return { status: 'scanned', message: '已扫描，待确认' };
+      }
+      return { status: 'waiting', message: '等待扫码' };
     }, '[轮询] 轮询二维码状态时发生网络错误', { status: 'expired', message: '网络错误' });
   }
 
@@ -303,89 +322,58 @@ export class HttpClient
   {
     return this.safeRequest(async () =>
     {
-      logInfo(`正在验证cookie有效性，请求用户信息...`);
-      const res = await this.http.get<BiliApiResponse<MyInfoData>>('https://api.bilibili.com/x/space/myinfo');
-
-      if (res.code !== 0)
+      if (!this.hasCookies())
       {
-        loggerError(`验证cookie失败，API返回错误: `, res);
         this.setCookieVerified(false);
         return { nickname: '', avatar: '', isValid: false };
       }
 
-      if (res.code === 0 && res.data)
+      const res = await this.renmuClient.user.getMyInfo();
+      this.setCookieVerified(true);
+
+      let avatarUrl = res.profile.face;
+      if (this.avatarBase64)
       {
-        logInfo(`验证cookie成功，用户名: ${res.data.name}`);
-        this.setCookieVerified(true);
-
-        let avatarUrl = res.data.face;
-        if (this.avatarBase64)
+        try
         {
-          try
+          const avatarFiledata = await this.safeFileRequest(res.profile.face, '获取头像文件失败');
+          if (avatarFiledata)
           {
-            const avatarFiledata = await this.safeFileRequest(
-              res.data.face,
-              '获取头像文件失败'
-            );
-
-            if (avatarFiledata)
-            {
-              const avatarBuffer = avatarFiledata.data;
-              const avatarMimeType = avatarFiledata.type || avatarFiledata.mime;
-              const base64 = Buffer.from(avatarBuffer).toString('base64');
-              avatarUrl = `data:${avatarMimeType};base64,${base64}`;
-              logInfo(`成功获取头像并转换为base64格式，用户: ${res.data.name}, 头像URL: ${res.data.face.substring(0, 50)}...`);
-            } else
-            {
-              loggerError(`获取头像失败，数据返回null。使用原始URL: ${res.data.face} `);
-            }
-          } catch (avatarError)
-          {
-            loggerError('获取头像失败，使用原始URL:', avatarError);
+            const avatarBuffer = avatarFiledata.data;
+            const avatarMimeType = avatarFiledata.type || avatarFiledata.mime;
+            const base64 = Buffer.from(avatarBuffer).toString('base64');
+            avatarUrl = `data:${avatarMimeType};base64,${base64}`;
           }
+        } catch (avatarError)
+        {
+          loggerError('获取头像失败，使用原始URL:', avatarError);
         }
-        return { nickname: res.data.name, avatar: avatarUrl, isValid: true };
       }
-      this.setCookieVerified(false);
-      return { nickname: '', avatar: '', isValid: false };
+
+      return { nickname: res.profile.name, avatar: avatarUrl, isValid: true };
     }, '验证Cookie失败', { nickname: '', avatar: '', isValid: false });
   }
-  // #endregion
 
   async getUser(userId: string): Promise<{ nickname: string, avatar: string; } | null>
   {
     return this.safeRequest(async () =>
     {
-      const baseParams = { mid: userId };
-      const signedParams = await this.signWithWbi(baseParams);
-
-      interface UserInfoResponseData
+      const uid = Number(userId);
+      if (Number.isNaN(uid))
       {
-        name: string;
-        face: string;
-      }
-      const res = await this.http.get<BiliApiResponse<UserInfoResponseData>>(
-        'https://api.bilibili.com/x/space/wbi/acc/info',
-        { params: { ...baseParams, ...signedParams } }
-      );
-
-      if (res.code === 0 && res.data)
-      {
-        return { nickname: res.data.name, avatar: res.data.face };
+        return null;
       }
 
-      loggerError(`获取B站用户 ${userId} 信息失败: `, res);
-      return null;
-    }, `获取B站用户 ${userId} 信息时发生网络错误`, null);
+      const res = await this.renmuClient.user.getUserInfo(uid, true);
+      return { nickname: res.name, avatar: res.face };
+    }, `获取B站用户${userId} 信息时发生网络错误`, null);
   }
 
-  // #region Private Message API
   async getNewSessions(begin_ts: number): Promise<NewSessionsData | null>
   {
-    // 检查cookie是否存在
     if (!this.cookies || !this.cookies.SESSDATA || !this.cookies.bili_jct || !this.cookieVerified)
     {
-      loggerError(`轮询新会话失败: 未设置cookie或cookie无效`);
+      loggerError('轮询新会话失败: 未设置cookie或cookie无效');
       return null;
     }
 
@@ -396,29 +384,27 @@ export class HttpClient
         {
           params: { begin_ts, build: 0, mobi_app: 'web' },
           headers: {
-            'Cookie': Object.entries(this.cookies).map(([k, v]) => `${k}=${v}`).join('; ')
-          }
+            Cookie: Object.entries(this.cookies).map(([k, v]) => `${k}=${v}`).join('; '),
+          },
         }
       );
       if (res.code === 0) return res.data;
-      loggerError(`轮询新会话失败: `, res);
+      loggerError('轮询新会话失败: ', res);
       return null;
-    }, `轮询新会话时发生网络错误`, null);
+    }, '轮询新会话时发生网络错误', null);
   }
 
   async fetchSessionMessages(talker_id: number, session_type: number, begin_seqno: number): Promise<SessionMessagesData | null>
   {
-    // 检查cookie是否已验证
     if (!this.cookieVerified)
     {
-      loggerError(`获取消息失败: 未设置cookie或cookie无效`);
+      loggerError('获取消息失败: 未设置cookie或cookie无效');
       return null;
     }
 
-    // 检查cookie是否存在
     if (!this.cookies || !this.cookies.SESSDATA || !this.cookies.bili_jct)
     {
-      loggerError(`获取消息失败: 未设置cookie或cookie无效`);
+      loggerError('获取消息失败: 未设置cookie或cookie无效');
       return null;
     }
 
@@ -434,24 +420,25 @@ export class HttpClient
             begin_seqno,
             size: 20,
             build: 0,
-            mobi_app: 'web'
+            mobi_app: 'web',
           },
           headers: {
-            'Cookie': Object.entries(this.cookies).map(([k, v]) => `${k}=${v}`).join('; ')
+            Cookie: Object.entries(this.cookies).map(([k, v]) => `${k}=${v}`).join('; '),
           },
-          responseType: 'text', // 确保获取原始文本
+          responseType: 'text',
         }
       );
 
-      const resText = httpResponse as unknown as string; // 强制转为 string
+      const resText = httpResponse as unknown as string;
       let res: BiliApiResponse<SessionMessagesData>;
       try
       {
         const transformedResText = resText.replace(/"msg_key":(\d+)/g, '"msg_key":"$1"');
         res = JSON.parse(transformedResText);
-      } catch (e)
+      } catch (error)
       {
-        loggerError(`fetchSessionMessages JSON parse error: ${e.message}, raw: ${resText}`);
+        const message = error instanceof Error ? error.message : String(error);
+        loggerError(`fetchSessionMessages JSON parse error: ${message}, raw: ${resText}`);
         return null;
       }
 
@@ -474,7 +461,7 @@ export class HttpClient
           build: '0',
           mobi_app: 'web',
           csrf: this.biliJct,
-          csrf_token: this.biliJct
+          csrf_token: this.biliJct,
         })
       );
       logInfo(`已将用户 ${talker_id} 的会话标记为已读，直到时间戳 ${ack_seqno}`);
@@ -509,7 +496,6 @@ export class HttpClient
 
   async sendMessage(senderUid: string, receiverId: number, msgContent: string, msgType: 1 | 2 | 5): Promise<string | null>
   {
-    // logInfo(`sendMessage: msgType=${msgType}, msgContent=${msgContent}`);
     const msgObject = {
       sender_uid: senderUid,
       receiver_id: receiverId,
@@ -537,20 +523,16 @@ export class HttpClient
       'csrf_token': this.biliJct,
       'csrf': this.biliJct,
     }).toString();
-    // logInfo(`sendMessage: formPayload=${formPayload}`);
 
     return this.safeRequest(async () =>
     {
       const urlParams = await this.signWithWbi({
-        'w_sender_uid': senderUid,
-        'w_receiver_id': receiverId,
-        'w_dev_id': this.deviceId,
-      }) as Record<string, any>;
+        w_sender_uid: senderUid,
+        w_receiver_id: receiverId,
+        w_dev_id: this.deviceId,
+      });
 
       const apiUrl = 'https://api.vc.bilibili.com/web_im/v1/web_im/send_msg';
-
-      const fullUrl = `${apiUrl}?${new URLSearchParams(urlParams).toString()}`;
-      logInfo(fullUrl);
       const httpResponse = await this.http.post<BiliApiResponse<BiliSendMessageResponseData>>(
         apiUrl,
         formPayload,
@@ -565,19 +547,16 @@ export class HttpClient
         }
       );
 
-      const resText = httpResponse as unknown as string; // 强制转为 string
-      logInfo(`sendMessage raw response text: ${resText}`);
-
+      const resText = httpResponse as unknown as string;
       let res: BiliApiResponse<BiliSendMessageResponseData>;
       try
       {
-        // 在 JSON.parse 之前，使用正则表达式将 msg_key 的数字值用引号括起来
-        // 否则后三位会变成 0
         const transformedResText = resText.replace(/"msg_key":(\d+)/g, '"msg_key":"$1"');
         res = JSON.parse(transformedResText);
-      } catch (e)
+      } catch (error)
       {
-        loggerError(`sendMessage JSON parse error: ${e.message}, raw: ${resText}`);
+        const message = error instanceof Error ? error.message : String(error);
+        loggerError(`sendMessage JSON parse error: ${message}, raw: ${resText}`);
         return null;
       }
 
@@ -601,28 +580,13 @@ export class HttpClient
       return null;
     }, `发送消息给 ${receiverId} 失败`, null);
   }
-  // #endregion
 
-  /**
-   * 当做 ctx.http.file
-   * @param url 文件URL
-   * @param errorMessage 错误时的日志消息
-   * @returns 文件数据或null
-   */
-  public async safeFileRequest(
-    url: string,
-    errorMessage: string
-  ): Promise<{ data: Buffer, type: string, name: string, mime: string; } | null>
+  public async safeFileRequest(url: string, errorMessage: string): Promise<{ data: Buffer, type: string, name: string, mime: string; } | null>
   {
-    const fileResponse = await this.safeRequest(
-      () => this.ctx.http.file(url),
-      errorMessage,
-      null
-    );
+    const fileResponse = await this.safeRequest(() => this.ctx.http.file(url), errorMessage, null);
 
     if (fileResponse)
     {
-      // 将 ArrayBuffer 转换为 Buffer
       const bufferData = Buffer.from(fileResponse.data);
       return {
         data: bufferData,

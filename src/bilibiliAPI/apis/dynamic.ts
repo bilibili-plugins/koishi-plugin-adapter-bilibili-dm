@@ -156,6 +156,21 @@ export class DynamicAPI
         loginfolive('上下文或HTTP客户端已停用，跳过获取个人动态');
         return [];
       }
+      try
+      {
+        const response = await this.bot.http.getRenmuClient().user.space(Number(uid), offset ? Number(offset) : undefined, true);
+        const feed = response as unknown as DynamicFeedResponse;
+        if (feed?.items)
+        {
+          loginfolive(`成功获取 UP 主 ${uid} 的 ${feed.items.length} 条动态`);
+          return feed.items;
+        }
+      }
+      catch (error)
+      {
+        loginfolive(`新包获取 UP 主 ${uid} 动态失败，回退到原请求: ${String(error)}`);
+      }
+
       const params: any = {
         host_mid: uid,
         timezone_offset: '-480',
@@ -568,7 +583,7 @@ export class DynamicAPI
         {
           await this.emitDynamicEvent(dynamic);
           // 添加小延迟避免事件处理过快
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await this.ctx.sleep(100);
         }
       } else
       {

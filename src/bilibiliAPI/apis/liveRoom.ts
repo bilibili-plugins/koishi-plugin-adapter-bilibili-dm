@@ -11,6 +11,16 @@ export class LiveRoomAPI
   // 获取直播间信息
   async getRoomInfo(roomId: number): Promise<LiveRoomInfo>
   {
+    try
+    {
+      const response = await this.bot.http.getRenmuClient().live.getRoomInfo(roomId, true);
+      return response as unknown as LiveRoomInfo;
+    }
+    catch (error)
+    {
+      loggerError('新包获取直播间信息失败，回退到原请求: ', error);
+    }
+
     const response = await this.bot.http.http.get('https://api.live.bilibili.com/room/v1/Room/get_info', {
       params: { room_id: roomId },
       headers: {

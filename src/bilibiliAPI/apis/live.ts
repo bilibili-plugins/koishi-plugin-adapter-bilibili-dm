@@ -415,7 +415,7 @@ export class LiveAPI
         {
           await this.emitLiveStartEvent(liveUser);
           // 添加小延迟避免事件处理过快
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await this.ctx.sleep(100);
         }
       }
 
@@ -427,7 +427,7 @@ export class LiveAPI
         {
           await this.emitLiveEndEvent(endedUser);
           // 添加小延迟避免事件处理过快
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await this.ctx.sleep(100);
         }
       }
 

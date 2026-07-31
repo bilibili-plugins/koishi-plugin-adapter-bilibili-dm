@@ -160,7 +160,7 @@ export class UserAPI
           // 添加延迟避免请求过快
           if (hasMore && page <= maxPages)
           {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await this.bot.ctx.sleep(1000);
           }
         } else
         {
@@ -187,6 +187,20 @@ export class UserAPI
   {
     try
     {
+      try
+      {
+        const userInfo = await this.bot.http.getRenmuClient().user.getUserInfo(Number(uid), true);
+        if (userInfo)
+        {
+          logInfo(`成功获取用户 ${uid} 的信息`);
+          return userInfo;
+        }
+      }
+      catch (error)
+      {
+        loggerError(`新包获取用户 ${uid} 信息失败，回退到原请求: `, error);
+      }
+
       const res: BilibiliResponse = await this.bot.http.http.get(
         'https://api.bilibili.com/x/space/acc/info',
         {
@@ -291,7 +305,7 @@ export class UserAPI
       // 添加延迟避免请求过快
       if (i + batchSize < uids.length)
       {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await this.bot.ctx.sleep(1000);
       }
     }
 
