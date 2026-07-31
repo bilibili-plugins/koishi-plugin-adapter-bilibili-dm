@@ -67,7 +67,7 @@ export const Config: Schema<PluginConfig> =
     Schema.object({
       selfId: Schema.string().required()
         .pattern(/^\d+$/)
-        .description('要登录的账号UID（纯数字）<br>如何查找UID？[点我查看方法](https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm/blob/main/readme.md#%EF%B8%8F-%E9%85%8D%E7%BD%AE)'),
+        .description('要登录的账号UID（纯数字）<br>如何查找UID？[点我查看方法](https://bilibili-plugins.github.io/koishi-plugin-adapter-bilibili-dm/)'),
     }).description('基础设置'),
 
     Schema.object({

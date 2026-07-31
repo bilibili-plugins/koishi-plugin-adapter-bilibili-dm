@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-adapter-bilibili-dm",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "Bilibili Adapter for Koishi\n哔哩哔哩适配器",
   "typings": "lib/index.d.ts",
   "main": "lib/index.js",
@@ -17,13 +17,13 @@
     "leafingxyz <2596628651@qq.com>"
   ],
   "bugs": {
-    "url": "https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm/issues/new/choose"
+    "url": "https://github.com/bilibili-plugins/koishi-plugin-adapter-bilibili-dm/issues/new/choose"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm.git"
+    "url": "git+https://github.com/bilibili-plugins/koishi-plugin-adapter-bilibili-dm.git"
   },
-  "homepage": "https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm",
+  "homepage": "https://bilibili-plugins.github.io/koishi-plugin-adapter-bilibili-dm",
   "scripts": {
     "build": "tsc -b",
     "pub": "npm publish --registry=https://registry.npmjs.org/ --access=public"

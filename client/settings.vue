@@ -36,8 +36,8 @@
           <p v-if="data.message">{{ data.message }}</p>
           <p v-if="data.message === '请使用手机扫描二维码'">请在两分钟内使用手机端扫描并确认登录。</p>
         </div>
-        <div class="qrcode-container">
-          <img v-if="data.image" class="qrcode" :src="data.image" alt="Bilibili 登录二维码" />
+        <div v-if="data.image && data.message !== '二维码已扫描，请在手机上确认登录'" class="qrcode-container">
+          <img class="qrcode" :src="data.image" alt="Bilibili 登录二维码" />
           <div class="refresh-overlay" v-if="qrCodeExpired">
             <p>二维码已过期</p>
             <k-button @click="startLogin(data.selfId)">刷新二维码</k-button>
