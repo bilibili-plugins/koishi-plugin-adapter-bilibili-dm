@@ -17,6 +17,13 @@ export interface BilibiliCommentNotification
   rpid: number;
   root: number;
   parent: number;
+  mentions: BilibiliMention[];
+}
+
+export interface BilibiliMention
+{
+  id: string;
+  name: string;
 }
 
 export interface BilibiliCommentTarget
@@ -124,6 +131,27 @@ function getUser(records: JsonRecord[]): { id: string; name: string; avatar: str
     }
   }
   return { id: '', name: '', avatar: '' };
+}
+
+function getMentions(records: JsonRecord[]): BilibiliMention[]
+{
+  const mentions = new Map<string, BilibiliMention>();
+  for (const record of records)
+  {
+    const details = record.at_details || record.atDetails;
+    if (!Array.isArray(details)) continue;
+
+    for (const detailValue of details)
+    {
+      const detail = asRecord(detailValue);
+      if (!detail) continue;
+
+      const id = readString(detail, 'mid', 'uid', 'user_id', 'mention_uid');
+      const name = readString(detail, 'name', 'uname', 'nickname', 'username');
+      if (id && name) mentions.set(`${id}:${name}`, { id, name });
+    }
+  }
+  return [...mentions.values()];
 }
 
 export class CommentAPI
@@ -403,6 +431,7 @@ export class CommentAPI
       userName: user.name,
       userAvatar: user.avatar,
       content: getText(records),
+      mentions: getMentions(records),
       timestamp: normalizeTimestamp(
         readNumber(targetReply, 'ctime', 'reply_time', 'timestamp')
         || readNumber(raw, 'reply_time', 'ctime', 'timestamp')

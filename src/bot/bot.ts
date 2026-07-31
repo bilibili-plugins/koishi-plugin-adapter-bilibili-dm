@@ -901,18 +901,22 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
    * 获取登录信息
    * @returns 登录信息
    */
+  toJSON(): Universal.Login
+  {
+    const login = super.toJSON();
+    const avatarUrl = this.http.getMyAvatarUrl();
+    return {
+      ...login,
+      user: {
+        ...login.user,
+        avatar: avatarUrl || login.user.avatar,
+      },
+    };
+  }
+
   async getLogin()
   {
-    return {
-      sn: this.sn,
-      adapter: this.adapterName,
-      user: await this.getSelf(),
-      platform: this.platform,
-      selfId: this.selfId,
-      hidden: this.hidden,
-      status: this.status,
-      features: this.features
-    };
+    return this.toJSON();
   }
 
   /**
@@ -980,7 +984,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       message: {
         id: notification.id,
         content: notification.content,
-        elements: this.parseCommentContent(notification.content),
+        elements: this.parseCommentContent(notification.content, notification.mentions),
         timestamp: notification.timestamp,
         quote: notification.parent !== notification.rpid ? {
           id: String(notification.parent),
@@ -996,19 +1000,34 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     logInfo(`评论 Session 已下发到 Koishi，消息ID: ${notification.id}`);
   }
 
-  private parseCommentContent(content: string): h[]
+  private parseCommentContent(content: string, mentions: BilibiliCommentNotification['mentions']): h[]
   {
+    const candidates = [...mentions];
     const botName = this.user.name?.trim();
-    if (!botName) return h.normalize(content);
+    if (botName && !candidates.some(mention => mention.name === botName))
+    {
+      candidates.push({ id: this.selfId, name: botName });
+    }
+    if (!candidates.length) return h.normalize(content);
 
-    const escapedName = botName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const mentionPattern = new RegExp(`^@${escapedName}(?:[ \\t]+)`);
-    const mention = content.match(mentionPattern);
-    if (!mention) return h.normalize(content);
+    candidates.sort((left, right) => right.name.length - left.name.length);
+    const escapedNames = candidates.map(mention => mention.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const mentionPattern = new RegExp(`@(${escapedNames.join('|')})(?:[ \\t]+|$)`, 'g');
+    const elements: h[] = [];
+    let cursor = 0;
+    for (const match of content.matchAll(mentionPattern))
+    {
+      const name = match[1];
+      const mention = candidates.find(item => item.name === name);
+      if (!mention || match.index === undefined) continue;
 
-    const elements: h[] = [h.at(this.selfId, { name: botName })];
-    const text = content.slice(mention[0].length);
-    if (text) elements.push(h.text(text));
+      if (match.index > cursor) elements.push(h.text(content.slice(cursor, match.index)));
+      elements.push(h.at(mention.id, { name: mention.name }));
+      cursor = match.index + match[0].length;
+    }
+
+    if (!elements.length) return h.normalize(content);
+    if (cursor < content.length) elements.push(h.text(content.slice(cursor)));
     return elements;
   }
 

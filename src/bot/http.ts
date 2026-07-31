@@ -24,6 +24,7 @@ export class HttpClient
   private wbiKeysTimestamp = 0;
   private wbiKeysFetchPromise: Promise<WbiKeys> | null = null;
   private avatarBase64 = true;
+  private myAvatarUrl = '';
   private selfId = 'unknown';
   private cookieVerified = false;
   private readonly renmuAuth: Auth;
@@ -390,6 +391,7 @@ export class HttpClient
       this.setCookieVerified(true);
 
       let avatarUrl = res.profile.face;
+      this.myAvatarUrl = res.profile.face;
       if (this.avatarBase64)
       {
         try
@@ -410,6 +412,11 @@ export class HttpClient
 
       return { nickname: res.profile.name, avatar: avatarUrl, isValid: true };
     }, '验证Cookie失败', { nickname: '', avatar: '', isValid: false });
+  }
+
+  getMyAvatarUrl(): string
+  {
+    return this.myAvatarUrl;
   }
 
   async getUser(userId: string): Promise<{ nickname: string, avatar: string; } | null>

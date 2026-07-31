@@ -58,13 +58,6 @@
       </template>
     </k-comment>
 
-    <!-- 服务数据尚未同步时，先显示登录状态检查。 -->
-    <div v-else>
-      <k-comment type="warning">
-        <p>正在获取登录状态...</p>
-        <k-progress indeterminate />
-      </k-comment>
-    </div>
   </div>
 </template>
 
