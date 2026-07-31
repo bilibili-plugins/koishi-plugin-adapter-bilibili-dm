@@ -163,6 +163,7 @@ export class CommentAPI
   private initialized = false;
   private requestActive = false;
   private readonly processedIds = new Set<string>();
+  private readonly unavailableVideos = new Set<string>();
 
   constructor(bot: BilibiliDmBot, ctx: Context)
   {
@@ -211,6 +212,7 @@ export class CommentAPI
     this.initialized = false;
     this.requestActive = false;
     this.processedIds.clear();
+    this.unavailableVideos.clear();
     logInfo('评论通知轮询已停止');
   }
 
@@ -380,7 +382,8 @@ export class CommentAPI
       || uri.match(/\/video\/(BV\w+)/i)?.[1]
       || '';
     const opusId = extractOpusId(records);
-    let oid = readNumber(item, 'subject_id', 'oid') || readFirstNumber(records, 'oid');
+    let oid = readNumber(item, 'subject_id', 'oid')
+      || readFirstNumber(records, 'subject_id', 'oid');
     let type: 1 | 11;
 
     const isVideo = business.includes('video') || business.includes('archive') || /\/video\//i.test(uri) || !!bvid;
@@ -388,9 +391,23 @@ export class CommentAPI
     if (isVideo)
     {
       type = 1;
-      if (bvid)
+      // 通知通常已经携带 subject_id，优先使用它，避免为历史视频重复请求详情。
+      if (bvid && !oid)
       {
-        const video = await this.bot.http.getRenmuClient().video.info({ bvid });
+        if (this.unavailableVideos.has(bvid)) return null;
+
+        let video: unknown;
+        try
+        {
+          video = await this.bot.http.getRenmuClient().video.info({ bvid });
+        }
+        catch (error)
+        {
+          // 历史视频不可访问时跳过通知，避免每轮输出完整异常堆栈。
+          this.unavailableVideos.add(bvid);
+          logInfo(`跳过无法访问的视频评论通知，BV号: ${bvid}`);
+          return null;
+        }
         const videoRecord = asRecord(video);
         const resolvedAid = readNumber(videoRecord, 'aid');
         if (resolvedAid) oid = resolvedAid;

@@ -31,9 +31,10 @@ export class BilibiliService
 
     ctx.on('dispose', () =>
     {
+      // 销毁前先通知前端离线，避免保留旧的在线状态。
+      this.setBotOffline(this.config.selfId);
       this.isDisposed = true;
       loggerInfo('正在关闭连接 Bilibili ...');
-      delete this.status[this.config.selfId];
       logInfo('已从服务状态中移除');
     });
   }
@@ -51,8 +52,24 @@ export class BilibiliService
 
   markAsDisposed(): void
   {
+    // 所有销毁路径都先同步离线状态。
+    this.setBotOffline(this.config.selfId);
     this.isDisposed = true;
     logInfo('服务已标记为已停用状态');
+  }
+
+  setBotOffline(selfId: string, message = '机器人已离线'): void
+  {
+    if (!selfId) return;
+
+    const status: BotStatus = {
+      ...(this.status[selfId] || { status: 'offline', selfId }),
+      status: 'offline',
+      selfId,
+      message,
+    };
+    this.status[selfId] = status;
+    this.launcher?.updateStatus?.(status);
   }
 
   updateStatus(selfId: string, status: Partial<BotStatus>)

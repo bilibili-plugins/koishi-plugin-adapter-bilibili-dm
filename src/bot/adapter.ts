@@ -72,6 +72,10 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
     {
       if (this.service)
       {
+        // 先同步当前实例的离线状态，再阻止后续业务更新。
+        const selfIds = new Set<string>([this.config.selfId]);
+        for (const bot of this.bots) selfIds.add(bot.selfId);
+        for (const selfId of selfIds) this.service.setBotOffline(selfId);
         this.service.markAsDisposed();
         logInfo('适配器正在停止，已标记服务为已停用状态');
       }
