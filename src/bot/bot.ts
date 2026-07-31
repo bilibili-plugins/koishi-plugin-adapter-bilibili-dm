@@ -10,6 +10,7 @@ import { BilibiliCommentNotification, BilibiliCommentTarget } from '../bilibiliA
 import { PluginConfig } from './types';
 import { HttpClient } from './http';
 import { shouldBlockMessage } from './utils';
+import type { BilibiliService } from './service';
 
 declare module 'koishi' {
   interface Context
@@ -94,7 +95,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   public readonly pluginConfig: PluginConfig;
   public readonly internal: Internal;
 
-  constructor(public ctx: Context, config: PluginConfig)
+  constructor(public ctx: Context, config: PluginConfig, private readonly service: BilibiliService)
   {
     super(ctx, config, 'bilibili');
     this.platform = 'bilibili';
@@ -848,10 +849,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
   async saveCookie(cookie: BilibiliCookie)
   {
-    if (this.ctx.bilibili_dm_service)
-    {
-      await this.ctx.bilibili_dm_service.saveCookie(this.selfId, cookie);
-    }
+    await this.service.saveCookie(this.selfId, cookie);
   }
 
   async getSelf(): Promise<Universal.User>

@@ -35,7 +35,7 @@ export class HttpClient
 
   constructor(private ctx: Context, config?: { selfId?: string; }, private bot?: BilibiliDmBot)
   {
-    this.selfId = config?.selfId || (ctx.bilibili_dm_service)?.config?.selfId || 'unknown';
+    this.selfId = config?.selfId || 'unknown';
 
     this.renmuAuth = new Auth();
     this.renmuClient = new Client(this.renmuAuth, true);

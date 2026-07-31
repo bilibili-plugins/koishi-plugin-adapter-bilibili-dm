@@ -112,25 +112,21 @@ const data = computed(() =>
   console.log(`[Bilibili DM] 尝试从服务 "${serviceId}" 获取数据，当前selfId: ${currentSelfId}`);
 
   // 从 store 中获取对应服务ID的数据
-  const serviceData = (store as any)[serviceId];
+  const serviceData: unknown = (store as Record<string, unknown>)[serviceId];
   if (!serviceData)
   {
     console.warn(`[Bilibili DM] 未找到服务 "${serviceId}" 的数据`);
     return null;
   }
 
-  const instanceData = serviceData[currentSelfId];
+  const instanceData = isBotStatus(serviceData) ? serviceData : null;
   if (!instanceData)
   {
-    console.log('[Bilibili DM] 未找到selfId为', currentSelfId, '的状态数据，创建初始状态');
-     return {
-       status: 'init',
-       selfId: currentSelfId,
-       message: '正在获取登录状态...'
-     };
+    console.warn(`[Bilibili DM] 服务 "${serviceId}" 中没有 selfId 为 "${currentSelfId}" 的状态`);
+    return null;
   }
 
-  if (instanceData && (!instanceData.selfId || instanceData.selfId !== currentSelfId))
+  if (instanceData && (!instanceData.selfId || String(instanceData.selfId) !== String(currentSelfId)))
   {
     console.log('[Bilibili DM] 状态对象的selfId不正确，修正为:', currentSelfId);
     instanceData.selfId = currentSelfId;
@@ -139,6 +135,18 @@ const data = computed(() =>
   console.log('[Bilibili DM] 成功获取实例数据:', instanceData);
   return instanceData;
 });
+
+function isBotStatus(value: unknown): value is {
+  selfId: string;
+  status: string;
+  message?: string;
+  image?: string;
+}
+{
+  return !!value && typeof value === 'object'
+    && 'selfId' in value && typeof value.selfId === 'string'
+    && 'status' in value && typeof value.status === 'string';
+}
 
 // 监听状态变化
 watch(() => data.value?.status, (newStatus: string | undefined, oldStatus: string | undefined) =>

@@ -69,7 +69,6 @@ export interface BotStatus
 declare module 'koishi' {
   interface Context
   {
-    bilibili_dm_service: BilibiliService;
   }
 
   interface Events
@@ -114,9 +113,10 @@ declare module '@koishijs/plugin-console' {
 
 
 // 创建数据服务
-export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
+export class BilibiliLauncher extends DataService<BotStatus>
 {
   private currentBot: string;
+  private readonly selfId: string;
   private consoleMessages: Record<string, BotStatus> = {};
   readonly serviceId: string;
 
@@ -126,6 +126,7 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
     super(ctx, serviceId as keyof import('@koishijs/plugin-console').Console.Services, { immediate: true });
     this.serviceId = serviceId;
     this.currentBot = config.selfId;
+    this.selfId = config.selfId;
 
     logInfo(`BilibiliLauncher构造函数，serviceId: ${serviceId}, currentBot: ${this.currentBot}`);
 
@@ -165,7 +166,7 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
 
       // 创建新机器人实例
       logInfo(`创建新机器人实例，使用selfId: ${selfId}`);
-      const bot = new BilibiliDmBot(ctx, config);
+      const bot = new BilibiliDmBot(ctx, config, this.service);
       const sessionFile = getDataFilePath(ctx, selfId, `${selfId}.cookie.json`);
 
       // 检查是否存在cookie文件，如果存在则删除
@@ -204,11 +205,23 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
   }
 
   // 更新状态并刷新前端
+  getService(): BilibiliService
+  {
+    return this.service;
+  }
+
   updateStatus(status: BotStatus): void
   {
     if (!status.selfId)
     {
       logInfo('updateStatus: selfId为空，无法更新状态');
+      return;
+    }
+
+    // 每个 launcher 只接受自己账号的状态，防止多开实例串线。
+    if (String(status.selfId) !== String(this.selfId))
+    {
+      logInfo(`忽略其他实例状态: ${status.selfId}，当前实例: ${this.selfId}`);
       return;
     }
 
@@ -226,20 +239,28 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
   // 获取控制台消息
   async get()
   {
-    const statusData = this.consoleMessages;
+    const currentStatus = this.consoleMessages[this.selfId];
+    const statusData: BotStatus = currentStatus || {
+      status: 'init',
+      selfId: this.selfId,
+      message: '正在获取登录状态...'
+    };
 
     // 记录当前获取的状态
-    logInfo(`前端请求状态数据，当前状态: ${JSON.stringify(statusData[this.currentBot]?.status)}, 消息: ${statusData[this.currentBot]?.message}`);
+    logInfo(`前端请求状态数据，当前状态: ${statusData.status}, 消息: ${statusData.message}`);
 
     // 如果有二维码，记录日志
-    Object.values(statusData).forEach(status =>
+    /*
+    if (statusData.status === 'qrcode' && statusData.image)
     {
-      if (status.status === 'qrcode' && status.image)
+      if (statusData.status === 'qrcode' && statusData.image)
       {
         logInfo(`返回二维码数据给前端，图片数据长度: ${status.image.length} 字节`);
       }
     });
+    */
 
+    /*
     Object.keys(statusData).forEach(selfId =>
     {
       if (statusData[selfId])
@@ -260,6 +281,7 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
         }
       }
     });
+    */
 
     return statusData;
   }
@@ -312,8 +334,6 @@ export function apply(ctx: Context, config: PluginConfig)
   // 创建服务
   const service = new BilibiliService(ctx, config);
 
-  ctx.bilibili_dm_service = service;
-
   // Entry 绑定当前作用域，卸载插件时自动移除。
   ctx.console.addEntry({
     dev: resolve(__dirname, '../client/index.ts'),
@@ -323,12 +343,12 @@ export function apply(ctx: Context, config: PluginConfig)
   // 直接绑定当前作用域，避免 ready 回调延迟创建重复服务。
   logInfo(`创建BilibiliLauncher实例，selfId: ${config.selfId}`);
   const launcher = new BilibiliLauncher(ctx, service, config);
-  ctx.set(serviceId, launcher);
   service.setLauncher(launcher);
 
   ctx.plugin(BilibiliDmAdapter, {
     ...config,
-    selfId: config.selfId
+    selfId: config.selfId,
+    service,
   });
 
   ctx.on('dispose', () =>

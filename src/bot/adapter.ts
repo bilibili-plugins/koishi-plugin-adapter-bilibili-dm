@@ -9,28 +9,34 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { getDataFilePath } from './utils';
 
+export interface BilibiliAdapterConfig extends PluginConfig
+{
+  service: BilibiliService;
+}
+
 export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
 {
   static immediate = true;
-  private service: BilibiliService;
-  constructor(ctx: Context, public config: PluginConfig)
+  private readonly services = new Map<string, BilibiliService>();
+  constructor(ctx: Context, public config: BilibiliAdapterConfig)
   {
     super(ctx);
 
-    this.service = ctx.bilibili_dm_service;
+    this.services.set(config.selfId, config.service);
 
     logInfo(`适配器初始化，selfId: ${this.config.selfId}`);
     ctx.server.get('/bilibili-dm/status', async (ctx) =>
     {
-      const status = this.service.getStatus();
-
       const requestedSelfId = ctx.query.selfId as string;
-      if (requestedSelfId && status[requestedSelfId])
+      if (requestedSelfId)
       {
-        ctx.body = { [requestedSelfId]: status[requestedSelfId] };
+        ctx.body = this.services.get(requestedSelfId)?.getStatus() || {};
         return;
       }
-      ctx.body = status;
+      ctx.body = Object.fromEntries(
+        [...this.services.entries()].flatMap(([selfId, service]) =>
+          Object.entries(service.getStatus()).map(([id, status]) => [id || selfId, status]))
+      );
     });
   }
 
@@ -41,8 +47,18 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
 
   async fork(parent?: Context, config?: any, error?: any)
   {
-    const actualConfig = config || this.config;
+    const actualConfig = (config || this.config) as BilibiliAdapterConfig;
     const selfId = actualConfig.selfId || this.config.selfId;
+    // fork 配置已经携带当前实例的 service，不能通过全局服务名反查实例。
+    const service = actualConfig.service
+      || this.services.get(selfId)
+      || (selfId === this.config.selfId ? this.config.service : undefined);
+    if (!service)
+    {
+      loggerError(`未找到机器人 ${selfId} 对应的 BilibiliService`);
+      return this;
+    }
+    this.services.set(selfId, service);
 
     logInfo(`开始fork过程，当前机器人ID: ${selfId}`);
 
@@ -51,7 +67,7 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
 
     logInfo(`开始fork过程，缓存文件存在: ${hasCacheFile}`);
 
-    this.service.updateStatus(selfId, {
+    service.updateStatus(selfId, {
       status: 'init',
       selfId: selfId,
       message: '正在获取登录状态...'
@@ -59,7 +75,7 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
     logInfo(`登录状态检查已开始，缓存文件存在: ${hasCacheFile}`);
 
     logInfo(`直接启动机器人...`);
-    await this.startBot(actualConfig);
+    await this.startBot(actualConfig, service);
 
     return this;
   }
@@ -70,13 +86,18 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
 
     try
     {
-      if (this.service)
+      if (this.services.size)
       {
         // 先同步当前实例的离线状态，再阻止后续业务更新。
-        const selfIds = new Set<string>([this.config.selfId]);
-        for (const bot of this.bots) selfIds.add(bot.selfId);
-        for (const selfId of selfIds) this.service.setBotOffline(selfId);
-        this.service.markAsDisposed();
+        for (const bot of this.bots)
+        {
+          this.services.get(bot.selfId)?.setBotOffline(bot.selfId);
+        }
+        for (const [selfId, service] of this.services)
+        {
+          service.setBotOffline(selfId);
+          service.markAsDisposed();
+        }
         logInfo('适配器正在停止，已标记服务为已停用状态');
       }
 
@@ -101,9 +122,9 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
     }
   }
 
-  async startBot(pluginConfig: PluginConfig)
+  async startBot(pluginConfig: PluginConfig, service: BilibiliService)
   {
-    const bot = new BilibiliDmBot(this.ctx, pluginConfig);
+    const bot = new BilibiliDmBot(this.ctx, pluginConfig, service);
 
     logInfo(`正在启动机器人...`);
 
@@ -112,7 +133,7 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
 
     try
     {
-      const loginSuccess = await this.service.startLogin(bot, sessionFile);
+      const loginSuccess = await service.startLogin(bot, sessionFile);
 
       if (loginSuccess)
       {
@@ -121,11 +142,11 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
       } else
       {
         logInfo(`登录流程未完成，保留现有错误状态`);
-        const loginStatus = this.service.getStatus()[pluginConfig.selfId];
+        const loginStatus = service.getStatus()[pluginConfig.selfId];
         if (loginStatus?.status !== 'error')
         {
           loggerError(`登录流程未完成，但未返回具体错误状态`);
-          this.service.updateStatus(pluginConfig.selfId, {
+          service.updateStatus(pluginConfig.selfId, {
             status: 'error',
             message: '登录失败，请查看后端日志'
           });
@@ -135,7 +156,7 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
     } catch (error)
     {
       loggerError(`机器人启动失败，错误详情: `, error);
-      this.service.updateStatus(pluginConfig.selfId, {
+      service.updateStatus(pluginConfig.selfId, {
         status: 'error',
         message: `启动失败: ${error.message || '未知错误'}`
       });
