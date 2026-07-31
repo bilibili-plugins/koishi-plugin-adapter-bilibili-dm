@@ -6,6 +6,7 @@ import { BilibiliMessageEncoder } from './messageEncoder';
 import { Internal } from '../bilibiliAPI/internal';
 import { logInfo, loggerError } from '../index';
 import { BilibiliCookie, PrivateMessage } from './types';
+import { BilibiliCommentNotification } from '../bilibiliAPI/apis/comment';
 import { PluginConfig } from './types';
 import { HttpClient } from './http';
 import { shouldBlockMessage } from './utils';
@@ -87,6 +88,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   private loginCancelled = false;
   private readonly loginReadyPromise: Promise<void>;
   private resolveLoginReady!: () => void;
+  private readonly commentTargets = new Map<string, { rpid: number; root: number; parent: number; }>();
 
   public readonly http: HttpClient;
   public readonly pluginConfig: PluginConfig;
@@ -356,6 +358,23 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
     logInfo(`cookie已验证，启动直播监听，轮询间隔: ${liveIntervalSeconds}秒 (${liveInterval}ms)`);
     this.internal.startLivePolling(liveInterval);
+  }
+
+  private startCommentPolling(): void
+  {
+    if (this.pluginConfig.enableCommentPolling === false)
+    {
+      logInfo('评论通知监听已禁用');
+      return;
+    }
+    if (!this.http.hasCookies())
+    {
+      logInfo('启动评论通知监听时 cookie 尚未验证，跳过本次启动');
+      return;
+    }
+
+    const interval = (this.pluginConfig.commentPollInterval || 30) * 1000;
+    this.internal.startCommentPolling(interval);
   }
 
   private startContinuousPolling(): void
@@ -718,6 +737,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       this.startPolling();
       this.startDynamicPolling();
       this.startLivePolling();
+      this.startCommentPolling();
       this.startMessageIdCleanup(); // 启动消息ID清理定时器
 
       logInfo(`轮询已启动，机器人状态: ${this.status}`);
@@ -747,6 +767,12 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       this.internal.stopLivePolling();
     }
 
+    if (this.internal.isCommentPollingActive())
+    {
+      logInfo('停止评论通知监听');
+      this.internal.stopCommentPolling();
+    }
+
     logInfo(`执行清理函数，数量: ${this.cleanupFunctions.length} `);
     for (const cleanup of this.cleanupFunctions)
     {
@@ -762,6 +788,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
     // 清空消息ID缓存
     this.processedMsgIds.clear();
+    this.commentTargets.clear();
     logInfo(`已清空消息ID缓存`);
 
     await super.stop();
@@ -901,7 +928,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   async sendMessage(channelId: string, content: Fragment): Promise<string[]>
   {
     const [type, talkerId] = channelId.split(':');
-    if (type !== 'private' || !talkerId) return [];
+    if (!talkerId || !['private', 'video', 'opus'].includes(type)) return [];
 
     logInfo(content);
 
@@ -911,6 +938,60 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     const messages = await encoder.send(processedContent);
 
     return messages.map(message => message.id).filter(id => id !== undefined) as string[];
+  }
+
+  async sendComment(channelId: string, content: string): Promise<string | null>
+  {
+    const target = this.commentTargets.get(channelId);
+    return this.internal.sendComment(channelId, content, target);
+  }
+
+  async receiveComment(notification: BilibiliCommentNotification): Promise<void>
+  {
+    if (String(notification.userId) === this.selfId) return;
+    if (!notification.content)
+    {
+      logInfo(`忽略空评论通知: ${notification.id}`);
+      return;
+    }
+
+    this.commentTargets.set(notification.channelId, {
+      rpid: notification.rpid,
+      root: notification.root,
+      parent: notification.parent,
+    });
+
+    const user = {
+      id: notification.userId,
+      name: notification.userName,
+      username: notification.userName,
+      avatar: notification.userAvatar,
+    };
+    const session = this.session({
+      type: 'message',
+      timestamp: notification.timestamp,
+      channel: {
+        id: notification.channelId,
+        type: Universal.Channel.Type.TEXT,
+      },
+      user,
+      message: {
+        id: notification.id,
+        content: notification.content,
+        elements: h.normalize(notification.content),
+        timestamp: notification.timestamp,
+        quote: notification.parent !== notification.rpid ? {
+          id: String(notification.parent),
+          content: '',
+          timestamp: notification.timestamp,
+          user: { id: this.selfId },
+        } : undefined,
+      },
+    });
+
+    logInfo(`收到评论通知，频道: ${notification.channelId}，用户: ${notification.userId}，内容: ${notification.content}`);
+    this.dispatch(session);
+    logInfo(`评论 Session 已下发到 Koishi，消息ID: ${notification.id}`);
   }
 
   private preprocessContent(content: Fragment): Fragment

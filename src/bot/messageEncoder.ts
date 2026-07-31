@@ -41,7 +41,7 @@ export class BilibiliMessageEncoder extends MessageEncoder<Context, BilibiliDmBo
     if (!this.textBuffer) return;
 
     const [type, talkerId] = this.channelId.split(':');
-    if (type !== 'private' || !talkerId) return;
+    if (!['private', 'video', 'opus'].includes(type) || !talkerId) return;
 
     const MAX_LENGTH = 470; // B站限制500字符，这里留一些余地
     let textToSend = this.textBuffer.replace(/\n+/g, '\n').trim();
@@ -101,7 +101,9 @@ export class BilibiliMessageEncoder extends MessageEncoder<Context, BilibiliDmBo
       if (currentChunk.trim().length > 0)
       {
         const msgContent = { content: currentChunk };
-        const msgKey = await this.bot.http.sendMessage(this.bot.selfId, Number(talkerId), JSON.stringify(msgContent), 1);
+        const msgKey = type === 'private'
+          ? await this.bot.http.sendMessage(this.bot.selfId, Number(talkerId), JSON.stringify(msgContent), 1)
+          : await this.bot.sendComment(this.channelId, currentChunk);
         if (msgKey)
         {
           this.results.push({ id: msgKey });

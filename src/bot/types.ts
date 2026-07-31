@@ -148,4 +148,6 @@ export interface PluginConfig
   dynamicPollInterval: number;
   enableLivePolling: boolean;
   livePollInterval: number;
+  enableCommentPolling: boolean;
+  commentPollInterval: number;
 }

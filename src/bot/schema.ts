@@ -83,6 +83,8 @@ export const Config: Schema<PluginConfig> =
     }).description('进阶设置'),
 
     Schema.object({
+      enableCommentPolling: Schema.boolean().default(true).description('启用评论通知监听'),
+      commentPollInterval: Schema.number().default(30).description('评论通知轮询间隔（单位：秒）').min(10).max(300),
       enableDynamicPolling: Schema.boolean().default(true).description('启用动态监听功能，监听关注UP主的动态更新'),
       dynamicPollInterval: Schema.number().default(30).description("动态轮询间隔时间（单位：秒）").min(10).max(300),
       enableLivePolling: Schema.boolean().default(true).description('启用直播监听功能，监听关注UP主的直播状态变化'),
@@ -107,5 +109,4 @@ export const Config: Schema<PluginConfig> =
       loggerinfo: Schema.boolean().default(false).description("日志调试模式").experimental(),
       loggerLiveInfo: Schema.boolean().default(false).description("直播间弹幕 日志调试模式<br>超级刷屏。禁止开发者以外的人开启。").experimental(),
     }).description('开发调试选项'),
-
   ]);

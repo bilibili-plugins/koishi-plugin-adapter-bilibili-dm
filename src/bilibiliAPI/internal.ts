@@ -9,6 +9,7 @@ import { LiveRoomAPI } from './apis/liveRoom';
 import { logInfo, loggerError } from './../index';
 import { LiveWebSocketManager } from './apis/liveWebSocket';
 import { VideoAPI } from './apis/video';
+import { CommentAPI } from './apis/comment';
 import
 {
   DynamicItem,
@@ -37,6 +38,7 @@ export class Internal implements InternalInterface
   private liveRoomAPI: LiveRoomAPI;
   private liveWebSocketManager: LiveWebSocketManager;
   private videoAPI: VideoAPI;
+  private commentAPI: CommentAPI;
 
   constructor(bot: BilibiliDmBot, ctx: Context)
   {
@@ -57,6 +59,12 @@ export class Internal implements InternalInterface
 
     // 初始化 VideoAPI
     this.videoAPI = new VideoAPI(bot);
+    this.commentAPI = new CommentAPI(bot, ctx);
+
+    bot.addCleanup(() =>
+    {
+      this.commentAPI.stopPolling();
+    });
 
     // 添加清理函数，确保插件停用时正确关闭WebSocket连接
     bot.addCleanup(() =>
@@ -67,6 +75,26 @@ export class Internal implements InternalInterface
         this.liveWebSocketManager.dispose?.();
       }
     });
+  }
+
+  startCommentPolling(interval: number = 30000): void
+  {
+    this.commentAPI.startPolling(interval);
+  }
+
+  stopCommentPolling(): void
+  {
+    this.commentAPI.stopPolling();
+  }
+
+  isCommentPollingActive(): boolean
+  {
+    return this.commentAPI.isPollingActive();
+  }
+
+  async sendComment(channelId: string, content: string, target?: { rpid: number; root: number; parent: number; }): Promise<string | null>
+  {
+    return this.commentAPI.sendComment(channelId, content, target);
   }
 
   // #region 用户关注相关API
