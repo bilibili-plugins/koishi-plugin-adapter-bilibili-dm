@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Client, Auth, WebQrcodeLogin, utils } from '@renmu/bili-api';
 
 import { createHash } from 'node:crypto';
+import { getBilibiliAvatarProxyUrl } from '../utils/media-proxy';
 
 const MIXIN_KEY_ENCODE_TABLE = [
   46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
@@ -23,7 +24,6 @@ export class HttpClient
   private wbiKeys: WbiKeys | null = null;
   private wbiKeysTimestamp = 0;
   private wbiKeysFetchPromise: Promise<WbiKeys> | null = null;
-  private avatarBase64 = true;
   private myAvatarUrl = '';
   private selfId = 'unknown';
   private cookieVerified = false;
@@ -33,11 +33,9 @@ export class HttpClient
   public http: Quester;
   public isDisposed = false;
 
-  constructor(private ctx: Context, config?: { selfId?: string; avatarBase64?: boolean; }, private bot?: BilibiliDmBot)
+  constructor(private ctx: Context, config?: { selfId?: string; }, private bot?: BilibiliDmBot)
   {
     this.selfId = config?.selfId || (ctx.bilibili_dm_service)?.config?.selfId || 'unknown';
-    const effectiveConfig = config || (ctx.bilibili_dm_service)?.config || {};
-    this.avatarBase64 = effectiveConfig.avatarBase64 !== undefined ? effectiveConfig.avatarBase64 : true;
 
     this.renmuAuth = new Auth();
     this.renmuClient = new Client(this.renmuAuth, true);
@@ -52,7 +50,7 @@ export class HttpClient
     });
     this.deviceId = this.generateDeviceId();
 
-    logInfo(`HttpClient初始化，avatarBase64=${this.avatarBase64}, selfId=${this.selfId}`);
+    logInfo(`HttpClient初始化，selfId=${this.selfId}`);
 
     ctx.on('dispose', () =>
     {
@@ -390,25 +388,8 @@ export class HttpClient
       const res = await this.renmuClient.user.getMyInfo();
       this.setCookieVerified(true);
 
-      let avatarUrl = res.profile.face;
-      this.myAvatarUrl = res.profile.face;
-      if (this.avatarBase64)
-      {
-        try
-        {
-          const avatarFiledata = await this.safeFileRequest(res.profile.face, '获取头像文件失败');
-          if (avatarFiledata)
-          {
-            const avatarBuffer = avatarFiledata.data;
-            const avatarMimeType = avatarFiledata.type || avatarFiledata.mime;
-            const base64 = Buffer.from(avatarBuffer).toString('base64');
-            avatarUrl = `data:${avatarMimeType};base64,${base64}`;
-          }
-        } catch (avatarError)
-        {
-          loggerError('获取头像失败，使用原始URL:', avatarError);
-        }
-      }
+      const avatarUrl = getBilibiliAvatarProxyUrl(this.ctx, res.profile.face);
+      this.myAvatarUrl = avatarUrl;
 
       return { nickname: res.profile.name, avatar: avatarUrl, isValid: true };
     }, '验证Cookie失败', { nickname: '', avatar: '', isValid: false });

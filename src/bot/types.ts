@@ -135,7 +135,6 @@ export interface PluginConfig
   selfId: string;
   loggerinfo: boolean;
   loggerLiveInfo: boolean;
-  avatarBase64: boolean;
   pollInterval: number;
   maxCacheSize: number;
   nestedblocked: {

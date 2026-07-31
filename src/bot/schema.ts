@@ -71,7 +71,6 @@ export const Config: Schema<PluginConfig> =
     }).description('基础设置'),
 
     Schema.object({
-      avatarBase64: Schema.boolean().default(true).description('请求base64头像数据 以解决控制台显示问题'),
       pollInterval: Schema.number().default(3000).min(1000).max(60000).step(500)
         .description("轮询消息的间隔时间（单位：毫秒）"),
       maxCacheSize: Schema.number().default(1000).min(100).max(10000).step(100)

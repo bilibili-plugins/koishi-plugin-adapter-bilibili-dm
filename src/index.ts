@@ -11,6 +11,7 @@ import { Config } from './bot/schema';
 import { promises as fs, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getDataFilePath } from './bot/utils';
+import { registerBilibiliMediaProxyRoute } from './utils/media-proxy';
 
 export let loggerError: (message: any, ...args: any[]) => void;
 export let loggerInfo: (message: any, ...args: any[]) => void;
@@ -266,6 +267,7 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
 
 export function apply(ctx: Context, config: PluginConfig)
 {
+  registerBilibiliMediaProxyRoute(ctx);
   const serviceId = `console.services.bilibili-dm-${config.selfId}`;
   const existingLauncher = ctx.get(serviceId) as BilibiliLauncher | undefined;
   if (existingLauncher)
