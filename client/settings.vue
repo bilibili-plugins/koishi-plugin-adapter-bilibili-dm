@@ -14,7 +14,7 @@
       </template>
 
       <template v-else-if="data.status === 'init'">
-        <p>正在登录 Bilibili 客户端，请稍候...</p>
+        <p>{{ data.message || '正在获取登录状态...' }}</p>
         <k-progress indeterminate />
       </template>
 
@@ -40,7 +40,6 @@
             <k-button @click="startLogin(data.selfId)">刷新二维码</k-button>
           </div>
         </div>
-        <p class="qrcode-tip">请在两分钟内扫描二维码并确认登录. . .</p>
         <div class="qrcode-actions">
           <k-button @click="startLogin(data.selfId)" :disabled="qrCodeLoading">
             <template v-if="qrCodeLoading">
@@ -56,9 +55,12 @@
       </template>
     </k-comment>
 
-    <!-- 当 data 为 null 时，显示加载中或者不显示任何内容 -->
+    <!-- 服务数据尚未同步时，先显示登录状态检查。 -->
     <div v-else>
-      <!-- 不渲染任何东西 -->
+      <k-comment type="warning">
+        <p>正在获取登录状态...</p>
+        <k-progress indeterminate />
+      </k-comment>
     </div>
   </div>
 </template>
@@ -120,11 +122,11 @@ const data = computed(() =>
   if (!instanceData)
   {
     console.log('[Bilibili DM] 未找到selfId为', currentSelfId, '的状态数据，创建初始状态');
-    return {
-      status: 'offline',
-      selfId: currentSelfId,
-      message: '机器人未登录，请点击登录按钮'
-    };
+     return {
+       status: 'init',
+       selfId: currentSelfId,
+       message: '正在获取登录状态...'
+     };
   }
 
   if (instanceData && (!instanceData.selfId || instanceData.selfId !== currentSelfId))
@@ -252,12 +254,6 @@ function getCommentType(status?: string)
     align-items: center;
     color: white;
     border-radius: 8px;
-  }
-
-  .qrcode-tip {
-    font-size: 0.9rem;
-    color: #666;
-    margin-top: 0.5rem;
   }
 
   .qrcode-actions {

@@ -199,9 +199,9 @@ export class BilibiliService
       } else
       {
         this.updateStatus(selfId, {
-          status: 'offline',
+          status: 'init',
           selfId,
-          message: '未找到缓存文件，需要扫码登录',
+          message: '正在获取登录状态...',
         });
       }
 
@@ -223,7 +223,7 @@ export class BilibiliService
 
       this.updateStatus(selfId, {
         status: 'qrcode',
-        message: '请使用 Bilibili APP 扫码登录',
+        message: '请使用手机扫描二维码',
         image: qrImageBase64,
       });
 
@@ -266,9 +266,11 @@ export class BilibiliService
 
         if (pollResult.status === 'scanned')
         {
+          // 扫码后仍保留二维码，等待手机确认登录完成。
           this.updateStatus(selfId, {
-            status: 'continue',
-            message: '二维码已扫描，请在手机上确认登录',
+            status: 'qrcode',
+            message: '二维码已扫描，请在手机上完成登录',
+            image: qrImageBase64,
           });
         } else if (pollResult.status === 'expired')
         {

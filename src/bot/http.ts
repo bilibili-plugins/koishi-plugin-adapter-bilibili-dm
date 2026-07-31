@@ -310,12 +310,16 @@ export class HttpClient
       {
         return { status: 'expired', message: '二维码已失效' };
       }
-      if (data.code === 86090 || data.code === 86101)
+      if (data.code === 86090)
       {
         return { status: 'scanned', message: '已扫描，待确认' };
       }
+      if (data.code === 86101)
+      {
+        return { status: 'waiting', message: '等待扫码' };
+      }
       return { status: 'waiting', message: '等待扫码' };
-    }, '[轮询] 轮询二维码状态时发生网络错误', { status: 'expired', message: '网络错误' });
+    }, '[轮询] 轮询二维码状态时发生网络错误', { status: 'waiting', message: '网络错误，继续等待扫码' });
   }
 
   async getMyInfo(): Promise<{ nickname: string, avatar: string, isValid: boolean; }>

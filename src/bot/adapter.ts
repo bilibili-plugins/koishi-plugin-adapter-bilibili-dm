@@ -73,21 +73,12 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
 
     logInfo(`开始fork过程，缓存文件存在: ${hasCacheFile}`);
 
-    if (!hasCacheFile)
-    {
-      this.service.updateStatus(selfId, {
-        status: 'offline',
-        selfId: selfId,
-        message: '机器人未登录，请点击登录按钮'
-      });
-    } else
-    {
-      this.service.updateStatus(selfId, {
-        status: 'init',
-        selfId: selfId,
-        message: '正在从缓存加载登录信息...'
-      });
-    }
+    this.service.updateStatus(selfId, {
+      status: 'init',
+      selfId: selfId,
+      message: '正在获取登录状态...'
+    });
+    logInfo(`登录状态检查已开始，缓存文件存在: ${hasCacheFile}`);
 
     logInfo(`直接启动机器人...`);
     await this.startBot(actualConfig);

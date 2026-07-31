@@ -136,24 +136,13 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
 
     logInfo(`BilibiliLauncher初始化，缓存文件存在: ${hasCacheFile}`);
 
-    // 初始化状态
-    if (hasCacheFile)
-    {
-      this.consoleMessages[config.selfId] = {
-        status: 'init',
-        selfId: config.selfId,
-        message: '正在从缓存加载登录信息...'
-      };
-      logInfo(`发现缓存文件，初始化状态为"正在从缓存加载登录信息..."`);
-    } else
-    {
-      this.consoleMessages[config.selfId] = {
-        status: 'offline',
-        selfId: config.selfId,
-        message: '机器人未登录，请点击登录按钮'
-      };
-      logInfo(`未发现缓存文件，初始化状态为"机器人未登录"`);
-    }
+    // 启动时先显示统一的登录状态检查，避免无缓存时短暂显示离线。
+    this.consoleMessages[config.selfId] = {
+      status: 'init',
+      selfId: config.selfId,
+      message: '正在获取登录状态...'
+    };
+    logInfo(`初始化登录状态，缓存文件存在: ${hasCacheFile}`);
 
     // 立即刷新前端
     this.refresh();
