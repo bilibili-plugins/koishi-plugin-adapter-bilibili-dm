@@ -36,29 +36,7 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
 
   async start()
   {
-    logInfo('Bilibili 私信适配器启动中...');
-    const dataDir = getDataFilePath(this.ctx, this.config.selfId);
-    await fs.mkdir(dataDir, { recursive: true });
-    logInfo(`数据目录已确保存在: ${dataDir}`);
-
-    const selfId = this.config.selfId;
-    logInfo(`正在启动机器人: ${selfId}`);
-
-    const bot = new BilibiliDmBot(this.ctx, this.config);
-    this.bots.push(bot);
-
-    const sessionFile = getDataFilePath(this.ctx, selfId, `${selfId}.cookie.json`);
-    logInfo(`机器人 ${selfId} 的会话文件路径: ${sessionFile}`);
-
-    // 启动登录流程
-    const loginSuccess = await this.service.startLogin(bot, sessionFile);
-    if (loginSuccess)
-    {
-      logInfo(`机器人 ${selfId} 登录成功。`);
-    } else
-    {
-      logInfo(`机器人 ${selfId} 登录失败。`);
-    }
+    // 登录统一由 fork 流程处理，避免重复创建二维码轮询任务。
   }
 
   async fork(parent?: Context, config?: any, error?: any)

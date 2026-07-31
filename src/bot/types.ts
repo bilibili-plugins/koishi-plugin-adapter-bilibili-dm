@@ -78,6 +78,7 @@ export interface QrCodePollResult
   status: 'waiting' | 'scanned' | 'success' | 'expired' | 'error';
   message: string; // 状态消息
   cookies?: Record<string, string>;
+  loginUrl?: string;
 }
 export interface MyInfoData
 {

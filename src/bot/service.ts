@@ -265,12 +265,23 @@ export class BilibiliService
           return false;
         }
 
-        if (pollResult.status === 'success' && pollResult.cookies)
+        if (pollResult.status === 'success')
         {
+          const cookies = pollResult.cookies ||
+            (pollResult.loginUrl ? await bot.http.exchangeQrCodeLogin(pollResult.loginUrl) : null);
+          if (!cookies)
+          {
+            this.updateStatus(selfId, {
+              status: 'error',
+              message: '扫码成功，但获取登录 Cookie 失败，请查看后端日志',
+            });
+            return false;
+          }
+
           const newCookie: BilibiliCookie = {
-            SESSDATA: pollResult.cookies.SESSDATA,
-            bili_jct: pollResult.cookies.bili_jct,
-            DedeUserID: pollResult.cookies.DedeUserID,
+            SESSDATA: cookies.SESSDATA,
+            bili_jct: cookies.bili_jct,
+            DedeUserID: cookies.DedeUserID,
           };
           bot.http.setCookies(newCookie);
           await this.saveCookie(selfId, newCookie);

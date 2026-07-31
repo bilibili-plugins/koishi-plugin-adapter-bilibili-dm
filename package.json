@@ -49,7 +49,7 @@
     },
     "preview": true,
     "hidden": false,
-    "service": { }
+    "service": {}
   },
   "peerDependencies": {
     "koishi": "^4.16.0"

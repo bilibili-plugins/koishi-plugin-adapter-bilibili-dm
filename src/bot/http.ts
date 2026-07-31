@@ -293,17 +293,18 @@ export class HttpClient
       const res = await login.poll(qrcodeKey);
       const data = res.data;
 
-      if (data.code === 0 && data.url)
-      {
-        const url = new URL(data.url);
-        const SESSDATA = url.searchParams.get('SESSDATA');
-        const bili_jct = url.searchParams.get('bili_jct');
-        const DedeUserID = url.searchParams.get('DedeUserID');
-        if (SESSDATA && bili_jct && DedeUserID)
+        if (data.code === 0 && data.url)
         {
-          return { status: 'success', message: '登录成功', cookies: { SESSDATA, bili_jct, DedeUserID } };
-        }
-        return { status: 'expired', message: 'Cookie 解析失败' };
+          const url = new URL(data.url);
+          const SESSDATA = url.searchParams.get('SESSDATA');
+          const bili_jct = url.searchParams.get('bili_jct');
+          const DedeUserID = url.searchParams.get('DedeUserID');
+          if (SESSDATA && bili_jct && DedeUserID)
+          {
+            return { status: 'success', message: '登录成功', cookies: { SESSDATA, bili_jct, DedeUserID } };
+          }
+
+          return { status: 'success', message: '登录成功', loginUrl: data.url };
       }
 
       if (data.code === 86038)
@@ -323,6 +324,56 @@ export class HttpClient
         message: `二维码登录接口错误（${data.code}）：${data.message || '未知错误'}`,
       };
     }, '[轮询] 轮询二维码状态时发生网络错误', { status: 'error', message: '二维码状态请求失败，请查看后端日志' });
+  }
+
+  async exchangeQrCodeLogin(loginUrl: string): Promise<BilibiliCookie | null>
+  {
+    return this.safeRequest(async () =>
+    {
+      const response = await this.http(loginUrl, {
+        redirect: 'manual',
+        validateStatus: (status) => status >= 200 && status < 400,
+        headers: {
+          Referer: 'https://www.bilibili.com/',
+          Origin: 'https://www.bilibili.com',
+        },
+      });
+      const headers = response.headers as Headers & {
+        getSetCookie?: () => string[];
+      };
+      const setCookies = headers.getSetCookie?.() || [];
+      const setCookie = headers.get('set-cookie');
+      const cookieHeaders = setCookies.length > 0 ? setCookies : setCookie ? [setCookie] : [];
+      if (cookieHeaders.length === 0)
+      {
+        loggerError(`二维码跨域登录响应未返回 Cookie: status=${response.status}, url=${response.url}, location=${headers.get('location') || ''}`);
+        return null;
+      }
+
+      const cookies: Record<string, string> = {};
+      for (const header of cookieHeaders)
+      {
+        for (const item of header.split(/, (?=[A-Za-z0-9_]+=[^;]+)/))
+        {
+          const match = item.match(/^\s*([^=;]+)=([^;]*)/);
+          if (match)
+          {
+            cookies[match[1]] = match[2];
+          }
+        }
+      }
+
+      const SESSDATA = cookies.SESSDATA;
+      const bili_jct = cookies.bili_jct;
+      const DedeUserID = cookies.DedeUserID;
+      if (!SESSDATA || !bili_jct || !DedeUserID)
+      {
+        loggerError(`二维码跨域登录 Cookie 不完整: status=${response.status}, url=${response.url}, cookieNames=${Object.keys(cookies).join(',')}`);
+        return null;
+      }
+
+      return { SESSDATA, bili_jct, DedeUserID };
+    }, '交换二维码登录 Cookie 时发生网络错误', null);
   }
 
   async getMyInfo(): Promise<{ nickname: string, avatar: string, isValid: boolean; }>
