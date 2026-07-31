@@ -82,6 +82,11 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   private consecutiveFailures: number = 0;
   private currentPollInterval: number;
   private readonly _msgIdExpireTime: number = 3600000; // 消息ID过期时间：1小时
+  private startTask: Promise<void> | null = null;
+  private loginReady = false;
+  private loginCancelled = false;
+  private readonly loginReadyPromise: Promise<void>;
+  private resolveLoginReady!: () => void;
 
   public readonly http: HttpClient;
   public readonly pluginConfig: PluginConfig;
@@ -107,6 +112,10 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     this._maxCacheSize = this.pluginConfig.maxCacheSize || 1000;
     this.consecutiveFailures = 0;
     this.currentPollInterval = this.pluginConfig.pollInterval;
+    this.loginReadyPromise = new Promise(resolve =>
+    {
+      this.resolveLoginReady = resolve;
+    });
 
     this.internal = new Internal(this, this.ctx);
 
@@ -116,6 +125,19 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   addCleanup(fn: () => void)
   {
     this.cleanupFunctions.push(fn);
+  }
+
+  markLoginReady(): void
+  {
+    if (this.loginReady) return;
+    this.loginReady = true;
+    this.resolveLoginReady();
+  }
+
+  cancelLogin(): void
+  {
+    this.loginCancelled = true;
+    this.markLoginReady();
   }
 
   private handlePollSuccess()
@@ -448,7 +470,13 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
                 logInfo(`跳过离线期间的消息(UID: ${msg.sender_uid}, MsgKey: ${msg.msg_key})`);
                 continue;
               }
-              this.adaptMessage(msg, session.session_type, session.talker_id);
+              try
+              {
+                await this.adaptMessage(msg, session.session_type, session.talker_id);
+              } catch (error)
+              {
+                loggerError(`处理消息 ${msg.msg_key} 失败: `, error);
+              }
             }
           }
           await this.http.updateAck(session.talker_id, session.session_type, session.max_seqno);
@@ -510,6 +538,8 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   private async adaptMessage(msg: PrivateMessage, sessionType: number, talkerId: number)
   {
     if (String(msg.sender_uid) === this.selfId) return;
+
+    logInfo(`收到私信，消息ID: ${msg.msg_key}，发送者: ${msg.sender_uid}，原始内容: ${msg.content}`);
 
     // 屏蔽的UID检查
     const senderUid = msg.sender_uid;
@@ -614,6 +644,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
     if (msg.msg_status === 1)
     {
+      logInfo(`准备向 Koishi 下发消息撤回 Session，消息ID: ${msg.msg_key}`);
       this.dispatch(this.session({
         type: 'message-deleted',
         timestamp: Date.now(),
@@ -626,12 +657,35 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
       }));
     } else
     {
+      logInfo(`准备向 Koishi 下发消息 Session，消息ID: ${msg.msg_key}，内容: ${session.content || ''}`);
       this.dispatch(session);
+      logInfo(`消息 Session 已下发到 Koishi，消息ID: ${msg.msg_key}`);
     }
   }
 
   async start()
   {
+    if (this.startTask)
+    {
+      logInfo(`机器人 ${this.selfId} 已在启动，复用现有启动任务`);
+      return this.startTask;
+    }
+
+    this.startTask = this.startInternal();
+    return this.startTask;
+  }
+
+  private async startInternal()
+  {
+    if (!this.loginReady)
+    {
+      await this.loginReadyPromise;
+    }
+    if (this.loginCancelled || this.isStopping)
+    {
+      return;
+    }
+
     logInfo(`开始启动机器人...`);
     await super.start();
 
@@ -674,6 +728,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
   async stop()
   {
+    this.cancelLogin();
     this.isStopping = true;
     this.status = Universal.Status.DISCONNECT;
     logInfo(`正在停止机器人...`);
@@ -710,6 +765,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     logInfo(`已清空消息ID缓存`);
 
     await super.stop();
+    this.startTask = null;
   }
 
   /**
@@ -919,7 +975,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
   async sendPrivateMessage(userId: string, content: Fragment): Promise<string[]>
   {
-    return this.sendMessage(`private:${userId} `, content);
+    return this.sendMessage(`private:${userId}`, content);
   }
 
   async getMessage(channelId: string, messageId: string): Promise<Universal.Message | undefined>

@@ -148,7 +148,8 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
 
     const loginListener = async (data: { selfId: string; }) =>
     {
-      const selfId = data.selfId || config.selfId;
+      // 登录账号始终以配置项为准，不能使用前端传入的其他账号。
+      const selfId = config.selfId;
       this.currentBot = selfId;
 
       logInfo(`收到前端登录请求，selfId: ${selfId}`);
@@ -181,7 +182,12 @@ export class BilibiliLauncher extends DataService<Record<string, BotStatus>>
 
       // 启动登录流程
       logInfo(`开始启动登录流程...`);
-      await this.service.startLogin(bot, sessionFile);
+      const loginSuccess = await this.service.startLogin(bot, sessionFile);
+      if (!loginSuccess)
+      {
+        // 登录失败时只清理临时机器人，保留插件和前端错误状态。
+        await bot.dispose();
+      }
 
       return { selfId };
     };

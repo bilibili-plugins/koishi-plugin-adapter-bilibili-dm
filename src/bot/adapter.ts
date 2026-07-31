@@ -106,33 +106,6 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
     const sessionFile = getDataFilePath(this.ctx, pluginConfig.selfId, `${pluginConfig.selfId}.cookie.json`);
     await fs.mkdir(path.dirname(sessionFile), { recursive: true });
 
-    const hasCacheFile = await fs.access(sessionFile).then(() => true).catch(() => false);
-
-    if (hasCacheFile)
-    {
-      try
-      {
-        const cookieData = JSON.parse(await fs.readFile(sessionFile, 'utf8'));
-        logInfo(`从缓存文件加载cookie，数据长度: ${JSON.stringify(cookieData).length}`);
-        bot.http.setCookies(cookieData);
-
-        const userInfo = await bot.http.getMyInfo();
-        if (userInfo.isValid)
-        {
-          logInfo(`缓存cookie有效，用户名: ${userInfo.nickname}`);
-          bot.http.setCookieVerified(true);
-          logInfo(`已设置cookie验证标志为true`);
-        } else
-        {
-          logInfo(`缓存cookie无效，需要重新登录`);
-          bot.http.setCookieVerified(false);
-        }
-      } catch (error)
-      {
-        loggerError(`读取缓存cookie失败: `, error);
-      }
-    }
-
     try
     {
       const loginSuccess = await this.service.startLogin(bot, sessionFile);
@@ -153,7 +126,7 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
             message: '登录失败，请查看后端日志'
           });
         }
-        bot.offline();
+        await bot.dispose();
       }
     } catch (error)
     {
@@ -162,7 +135,7 @@ export class BilibiliDmAdapter extends Adapter<Context, BilibiliDmBot>
         status: 'error',
         message: `启动失败: ${error.message || '未知错误'}`
       });
-      bot.offline();
+      await bot.dispose();
     }
   }
 }

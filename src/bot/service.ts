@@ -129,9 +129,27 @@ export class BilibiliService
     return parsed as BilibiliCookie;
   }
 
+  private isCookieAccountMatched(cookieData: BilibiliCookie, selfId: string): boolean
+  {
+    const cookieId = String(cookieData.DedeUserID || '').trim();
+    const configId = String(selfId).trim();
+    return !!cookieId && cookieId === configId;
+  }
+
+  private rejectMismatchedAccount(selfId: string, cookieId: string): void
+  {
+    loggerError(`扫码账号与配置项账号不一致，配置项 selfId: ${selfId}，Cookie DedeUserID: ${cookieId}`);
+    this.updateStatus(selfId, {
+      status: 'error',
+      selfId,
+      message: '扫码账号和配置项账号不一致，请更换账号',
+    });
+  }
+
   async startLogin(bot: BilibiliDmBot, sessionFile: string): Promise<boolean>
   {
     const selfId = bot.selfId;
+    let loginSucceeded = false;
 
     try
     {
@@ -166,6 +184,14 @@ export class BilibiliService
             throw new Error('cookie 文件格式无效');
           }
 
+          if (!this.isCookieAccountMatched(cookieData, selfId))
+          {
+            const cookieId = String(cookieData.DedeUserID || '未知');
+            this.rejectMismatchedAccount(selfId, cookieId);
+            bot.http.setCookieVerified(false);
+            return false;
+          }
+
           bot.http.setCookies(cookieData);
           const userInfo = await bot.http.getMyInfo();
           if (this.isDisposed)
@@ -186,6 +212,7 @@ export class BilibiliService
 
             loggerInfo(`已使用缓存登录，欢迎回来，${userInfo.nickname}`);
             bot.http.setCookieVerified(true);
+            bot.markLoginReady();
 
             await bot.start();
             if (this.isDisposed)
@@ -193,6 +220,7 @@ export class BilibiliService
               return false;
             }
             bot.online();
+            loginSucceeded = true;
             return true;
           }
 
@@ -283,12 +311,21 @@ export class BilibiliService
             bili_jct: cookies.bili_jct,
             DedeUserID: cookies.DedeUserID,
           };
-          bot.http.setCookies(newCookie);
+
           await this.saveCookie(selfId, newCookie);
           if (this.isDisposed)
           {
             return false;
           }
+
+          if (!this.isCookieAccountMatched(newCookie, selfId))
+          {
+            this.rejectMismatchedAccount(selfId, String(newCookie.DedeUserID || '未知'));
+            bot.http.setCookieVerified(false);
+            return false;
+          }
+
+          bot.http.setCookies(newCookie);
           bot.http.setCookieVerified(true);
 
           const userInfo = await bot.http.getMyInfo();
@@ -309,12 +346,14 @@ export class BilibiliService
 
           loggerInfo(`已使用扫码登录，欢迎回来，${userInfo.nickname}`);
 
+          bot.markLoginReady();
           await bot.start();
           if (this.isDisposed)
           {
             return false;
           }
           bot.online();
+          loginSucceeded = true;
           return true;
         }
 
@@ -381,6 +420,13 @@ export class BilibiliService
         message: `登录失败: ${error instanceof Error ? error.message : String(error)}`,
       });
       return false;
+    }
+    finally
+    {
+      if (!loginSucceeded)
+      {
+        bot.cancelLogin();
+      }
     }
   }
 }

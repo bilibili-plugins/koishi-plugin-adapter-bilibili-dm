@@ -109,7 +109,7 @@ export class BilibiliMessageEncoder extends MessageEncoder<Context, BilibiliDmBo
         // 在发送多条消息之间添加一个小的延迟，以避免被B站API限速
         if (textToSend.length > 0)
         {
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await this.bot.ctx.sleep(200);
         }
       }
     }
