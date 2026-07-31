@@ -7,13 +7,22 @@ export interface BilibiliCommentNotification
 {
   id: string;
   oid: number;
-  type: 1 | 17;
+  type: 1 | 11;
   channelId: string;
   userId: string;
   userName: string;
   userAvatar: string;
   content: string;
   timestamp: number;
+  rpid: number;
+  root: number;
+  parent: number;
+}
+
+export interface BilibiliCommentTarget
+{
+  oid: number;
+  type: 1 | 11;
   rpid: number;
   root: number;
   parent: number;
@@ -57,18 +66,17 @@ function readFirstNumber(records: JsonRecord[], ...keys: string[]): number
   return 0;
 }
 
-function extractOpusId(records: JsonRecord[]): number
+function extractOpusId(records: JsonRecord[]): string
 {
-  const fieldId = readFirstNumber(records, 'dynamic_id', 'dynamicId', 'opus_id', 'opusId');
-  if (fieldId) return fieldId;
-
   for (const record of records)
   {
     const uri = readString(record, 'uri', 'native_uri', 'jump_url', 'jumpUrl');
     const match = uri.match(/(?:\/opus\/|t\.bilibili\.com\/)(\d+)/i);
-    if (match) return Number(match[1]);
+    if (match) return match[1];
   }
-  return 0;
+
+  const fieldId = readString(records[0], 'dynamic_id', 'dynamicId', 'opus_id', 'opusId');
+  return /^\d{4,}$/.test(fieldId) ? fieldId : '';
 }
 
 function normalizeTimestamp(value: number): number
@@ -183,26 +191,21 @@ export class CommentAPI
     return this.isPolling;
   }
 
-  async sendComment(channelId: string, content: string, target?: { rpid: number; root: number; parent: number; }): Promise<string | null>
+  async sendComment(channelId: string, content: string, target?: BilibiliCommentTarget): Promise<string | null>
   {
     try
     {
       const [kind, value] = channelId.split(':');
       if (!value || (kind !== 'video' && kind !== 'opus')) return null;
 
-      let oid = 0;
-      let type: 1 | 17;
-      if (kind === 'opus')
+      if (!target?.rpid)
       {
-        oid = Number(value);
-        type = 17;
-      } else
-      {
-        const video = await this.bot.http.getRenmuClient().video.info({ bvid: value });
-        const videoRecord = asRecord(video);
-        oid = readNumber(videoRecord, 'aid');
-        type = 1;
+        loggerError(`无法确定 ${channelId} 的目标评论，已阻止发送一级评论`);
+        return null;
       }
+
+      const oid = target.oid;
+      const type = target.type;
 
       if (!oid)
       {
@@ -210,7 +213,7 @@ export class CommentAPI
         return null;
       }
 
-      logInfo(`准备发送评论，频道: ${channelId}，评论区 oid: ${oid}，评论类型: ${type}`);
+      logInfo(`准备回复评论，频道: ${channelId}，评论区 oid: ${oid}，评论类型: ${type}，目标评论 rpid: ${target.rpid}`);
 
       const reply = await this.bot.http.getRenmuClient().newReply(oid, type);
       const params: {
@@ -220,20 +223,26 @@ export class CommentAPI
         parent?: number;
       } = { message: content, plat: 1 };
 
-      if (target?.rpid)
-      {
-        params.root = target.root || target.rpid;
-        params.parent = target.parent || target.rpid;
-      }
+      // 回复收到的评论本身，而不是给帖子发送一级评论。
+      params.root = target.rpid;
+      params.parent = target.rpid;
 
       const result = await reply.add(params);
-      const rpid = readNumber(asRecord(result), 'rpid');
-      if (rpid)
+      const resultRecord = asRecord(result);
+      const replyRecord = asRecord(resultRecord?.reply);
+      const rpid = readNumber(resultRecord, 'rpid') || readNumber(replyRecord, 'rpid');
+      const returnedOid = readNumber(resultRecord, 'oid') || readNumber(replyRecord, 'oid');
+      const returnedType = readNumber(resultRecord, 'type') || readNumber(replyRecord, 'type');
+      const returnedRoot = readNumber(resultRecord, 'root') || readNumber(replyRecord, 'root');
+      const returnedParent = readNumber(resultRecord, 'parent') || readNumber(replyRecord, 'parent');
+
+      if (rpid && returnedOid === oid && returnedType === type
+        && returnedRoot === target.rpid && returnedParent === target.rpid)
       {
-        logInfo(`评论发送成功，频道: ${channelId}，评论ID: ${rpid}`);
+        logInfo(`评论回复发送成功，频道: ${channelId}，目标评论: ${target.rpid}，评论ID: ${rpid}`);
         return String(rpid);
       }
-      loggerError(`评论接口返回成功但缺少评论ID，频道: ${channelId}`);
+      loggerError(`评论回复返回结果校验失败，频道: ${channelId}，目标评论: ${target.rpid}，返回数据: ${JSON.stringify(result)}`);
       return null;
     } catch (error)
     {
@@ -343,36 +352,36 @@ export class CommentAPI
       || uri.match(/\/video\/(BV\w+)/i)?.[1]
       || '';
     const opusId = extractOpusId(records);
-    let oid = opusId || readFirstNumber(records, 'oid', 'business_id', 'dynamic_id');
-    let type: 1 | 17;
+    let oid = readNumber(item, 'subject_id', 'oid') || readFirstNumber(records, 'oid');
+    let type: 1 | 11;
 
     const isVideo = business.includes('video') || business.includes('archive') || /\/video\//i.test(uri) || !!bvid;
     const isOpus = business.includes('dynamic') || business.includes('opus') || /(?:t\.bilibili\.com|\/opus\/)/i.test(uri);
     if (isVideo)
     {
       type = 1;
-      if (!bvid && oid)
+      if (bvid)
       {
-        const video = await this.bot.http.getRenmuClient().video.info({ aid: oid });
+        const video = await this.bot.http.getRenmuClient().video.info({ bvid });
         const videoRecord = asRecord(video);
-        const resolvedBvid = readString(videoRecord, 'bvid');
-        if (resolvedBvid) return this.createNotification(raw, item, records, id, oid, type, resolvedBvid);
+        const resolvedAid = readNumber(videoRecord, 'aid');
+        if (resolvedAid) oid = resolvedAid;
       }
-      if (!bvid) return null;
+      if (!bvid || !oid) return null;
       return this.createNotification(raw, item, records, id, oid, type, bvid);
     }
 
-    if (isOpus && oid)
+    if (isOpus && opusId && oid)
     {
-      type = 17;
-      return this.createNotification(raw, item, records, id, oid, type, String(oid));
+      type = 11;
+      return this.createNotification(raw, item, records, id, oid, type, opusId);
     }
 
     logInfo(`忽略无法识别目标类型的评论通知: ${JSON.stringify(rawValue)}`);
     return null;
   }
 
-  private createNotification(raw: JsonRecord, item: JsonRecord, records: JsonRecord[], id: string, oid: number, type: 1 | 17, channelValue: string): BilibiliCommentNotification | null
+  private createNotification(raw: JsonRecord, item: JsonRecord, records: JsonRecord[], id: string, oid: number, type: 1 | 11, channelValue: string): BilibiliCommentNotification | null
   {
     const targetReply = asRecord(item.target_reply) || asRecord(item.targetReply);
     const user = getUser(records);

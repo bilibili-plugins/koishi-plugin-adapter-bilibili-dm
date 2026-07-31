@@ -9,7 +9,7 @@ import { LiveRoomAPI } from './apis/liveRoom';
 import { logInfo, loggerError } from './../index';
 import { LiveWebSocketManager } from './apis/liveWebSocket';
 import { VideoAPI } from './apis/video';
-import { CommentAPI } from './apis/comment';
+import { BilibiliCommentTarget, CommentAPI } from './apis/comment';
 import
 {
   DynamicItem,
@@ -92,7 +92,7 @@ export class Internal implements InternalInterface
     return this.commentAPI.isPollingActive();
   }
 
-  async sendComment(channelId: string, content: string, target?: { rpid: number; root: number; parent: number; }): Promise<string | null>
+  async sendComment(channelId: string, content: string, target?: BilibiliCommentTarget): Promise<string | null>
   {
     return this.commentAPI.sendComment(channelId, content, target);
   }

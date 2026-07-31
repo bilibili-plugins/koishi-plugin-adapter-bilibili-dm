@@ -6,7 +6,7 @@ import { BilibiliMessageEncoder } from './messageEncoder';
 import { Internal } from '../bilibiliAPI/internal';
 import { logInfo, loggerError } from '../index';
 import { BilibiliCookie, PrivateMessage } from './types';
-import { BilibiliCommentNotification } from '../bilibiliAPI/apis/comment';
+import { BilibiliCommentNotification, BilibiliCommentTarget } from '../bilibiliAPI/apis/comment';
 import { PluginConfig } from './types';
 import { HttpClient } from './http';
 import { shouldBlockMessage } from './utils';
@@ -88,7 +88,7 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
   private loginCancelled = false;
   private readonly loginReadyPromise: Promise<void>;
   private resolveLoginReady!: () => void;
-  private readonly commentTargets = new Map<string, { rpid: number; root: number; parent: number; }>();
+  private readonly commentTargets = new Map<string, BilibiliCommentTarget>();
 
   public readonly http: HttpClient;
   public readonly pluginConfig: PluginConfig;
@@ -956,6 +956,8 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     }
 
     this.commentTargets.set(notification.channelId, {
+      oid: notification.oid,
+      type: notification.type,
       rpid: notification.rpid,
       root: notification.root,
       parent: notification.parent,
