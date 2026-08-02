@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-adapter-bilibili-dm",
-  "version": "2.7.3",
+  "version": "2.7.4",
   "description": "Bilibili Adapter for Koishi\n哔哩哔哩适配器",
   "typings": "lib/index.d.ts",
   "main": "lib/index.js",
@@ -58,7 +58,6 @@
     "@koishijs/client": "^5.29.4",
     "@koishijs/plugin-console": "^5.30.9",
     "@renmu/bili-api": "latest",
-    "eventemitter3": "^5.0.4",
     "qrcode": "^1.5.4",
     "uuid": "^9.0.1"
   },

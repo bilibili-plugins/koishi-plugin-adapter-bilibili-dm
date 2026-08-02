@@ -7,6 +7,9 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Client, Auth } from '@renmu/bili-api';
 
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getBilibiliAvatarProxyUrl } from '../utils/media-proxy';
 
 const MIXIN_KEY_ENCODE_TABLE = [
@@ -16,11 +19,71 @@ const MIXIN_KEY_ENCODE_TABLE = [
   22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
 
-type BiliApiModule = typeof import('@renmu/bili-api');
-type DynamicImporter = (specifier: string) => Promise<BiliApiModule>;
+type RenmuUser = Client['user'];
+type RenmuSearch = Client['search'];
+type RenmuVideo = Client['video'];
+type RenmuLive = Client['live'];
+type RenmuReply = Awaited<ReturnType<Client['newReply']>>;
+
+interface RenmuClient
+{
+  user: RenmuUser;
+  search: RenmuSearch;
+  video: RenmuVideo;
+  live: RenmuLive;
+  newReply(oid: number, type: number): Promise<RenmuReply>;
+}
+
+interface RenmuAuthModule
+{
+  default: new () => Auth;
+}
+
+interface RenmuLoginModule
+{
+  WebQrcodeLogin: new () => WebQrcodeLoginLike;
+}
+
+interface RenmuUserModule
+{
+  default: new (auth?: Auth, useCookie?: boolean) => RenmuUser;
+}
+
+interface RenmuSearchModule
+{
+  default: new (auth?: Auth, useCookie?: boolean) => RenmuSearch;
+}
+
+interface RenmuVideoModule
+{
+  default: new (auth?: Auth, useCookie?: boolean) => RenmuVideo;
+}
+
+interface RenmuLiveModule
+{
+  default: new (auth?: Auth, useCookie?: boolean) => RenmuLive;
+}
+
+interface RenmuReplyModule
+{
+  default: new (auth?: Auth, useCookie?: boolean, oid?: number, type?: number) => RenmuReply;
+}
+
+interface WebQrcodeLoginLike
+{
+  getQrcode(): Promise<{ url: string; qrcode_key: string; }>;
+  poll(qrcodeKey: string): Promise<{ data: {
+    code: number;
+    url?: string;
+    message?: string;
+  }; }>;
+}
+
+type DynamicImporter = <T>(specifier: string) => Promise<T>;
 
 // 使用未被打包器改写的动态 import，兼容 Koishi 的 CommonJS 加载方式。
 const dynamicImport = new Function('specifier', 'return import(specifier)') as DynamicImporter;
+const resolvePackage = createRequire(__filename);
 
 export class HttpClient
 {
@@ -34,8 +97,7 @@ export class HttpClient
   private selfId = 'unknown';
   private cookieVerified = false;
   private renmuAuth: Auth | undefined;
-  private renmuClientPromise: Promise<Client> | undefined;
-  private renmuApiPromise: Promise<BiliApiModule> | undefined;
+  private renmuClientPromise: Promise<RenmuClient> | undefined;
 
   public http: Quester;
   public isDisposed = false;
@@ -99,17 +161,16 @@ export class HttpClient
     }
   }
 
-  private async loadRenmuApi(): Promise<BiliApiModule>
+  private loadRenmuModule<T>(specifier: string): Promise<T>
   {
-    if (!this.renmuApiPromise)
-    {
-      this.renmuApiPromise = dynamicImport('@renmu/bili-api').catch((error) =>
-      {
-        this.renmuApiPromise = undefined;
-        throw error;
-      });
-    }
-    return this.renmuApiPromise;
+    return dynamicImport<T>(specifier);
+  }
+
+  private loadRenmuFile<T>(relativePath: string): Promise<T>
+  {
+    const entry = resolvePackage.resolve('@renmu/bili-api');
+    const file = path.resolve(path.dirname(entry), relativePath);
+    return this.loadRenmuModule<T>(pathToFileURL(file).href);
   }
 
   private syncRenmuAuth(): void
@@ -130,15 +191,29 @@ export class HttpClient
     );
   }
 
-  async getRenmuClient(): Promise<Client>
+  async getRenmuClient(): Promise<RenmuClient>
   {
     if (!this.renmuClientPromise)
     {
-      this.renmuClientPromise = this.loadRenmuApi().then((api) =>
+      this.renmuClientPromise = Promise.all([
+        this.loadRenmuFile<RenmuAuthModule>('base/Auth.js'),
+        this.loadRenmuFile<RenmuUserModule>('user/index.js'),
+        this.loadRenmuFile<RenmuSearchModule>('search/index.js'),
+        this.loadRenmuFile<RenmuVideoModule>('video/index.js'),
+        this.loadRenmuFile<RenmuLiveModule>('live/index.js'),
+        this.loadRenmuFile<RenmuReplyModule>('video/reply.js'),
+      ]).then(([authModule, userModule, searchModule, videoModule, liveModule, replyModule]) =>
       {
-        this.renmuAuth = new api.Auth();
+        this.renmuAuth = new authModule.default();
         this.syncRenmuAuth();
-        return new api.Client(this.renmuAuth, true);
+        const auth = this.renmuAuth;
+        return {
+          user: new userModule.default(auth, true),
+          search: new searchModule.default(auth, true),
+          video: new videoModule.default(auth, true),
+          live: new liveModule.default(auth, true),
+          newReply: async (oid: number, type: number) => new replyModule.default(auth, true, oid, type),
+        };
       }).catch((error) =>
       {
         this.renmuClientPromise = undefined;
@@ -286,18 +361,14 @@ export class HttpClient
 
   async getWbiSignature(params: Record<string, string | number>): Promise<{ w_rid: string; wts: number; }>
   {
-    const api = await this.loadRenmuApi();
-    const signedQuery = await api.utils.WbiSign({ ...params });
-    const searchParams = new URLSearchParams(signedQuery);
-    const w_rid = searchParams.get('w_rid');
-    const wts = searchParams.get('wts');
+    const { w_rid, wts } = await this.signWithWbi(params);
 
     if (!w_rid || !wts)
     {
       throw new Error('新包返回的 WBI 签名结果缺少必要字段');
     }
 
-    return { w_rid, wts: Number(wts) };
+    return { w_rid, wts };
   }
 
   getBiliJct(): string
@@ -309,8 +380,8 @@ export class HttpClient
   {
     return this.safeRequest(async () =>
     {
-      const api = await this.loadRenmuApi();
-      const login = new api.WebQrcodeLogin();
+      const loginModule = await this.loadRenmuFile<RenmuLoginModule>('user/login.js');
+      const login = new loginModule.WebQrcodeLogin();
       const res = await login.getQrcode();
       return { url: res.url, qrcode_key: res.qrcode_key };
     }, '获取二维码数据时发生网络错误', null);
@@ -320,8 +391,8 @@ export class HttpClient
   {
     return this.safeRequest(async () =>
     {
-      const api = await this.loadRenmuApi();
-      const login = new api.WebQrcodeLogin();
+      const loginModule = await this.loadRenmuFile<RenmuLoginModule>('user/login.js');
+      const login = new loginModule.WebQrcodeLogin();
       const res = await login.poll(qrcodeKey);
       const data = res.data;
 
