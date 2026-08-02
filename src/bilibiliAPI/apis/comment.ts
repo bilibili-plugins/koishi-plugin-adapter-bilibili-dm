@@ -245,7 +245,7 @@ export class CommentAPI
 
       logInfo(`准备回复评论，频道: ${channelId}，评论区 oid: ${oid}，评论类型: ${type}，目标评论 rpid: ${target.rpid}`);
 
-      const reply = await this.bot.http.getRenmuClient().newReply(oid, type);
+      const reply = await (await this.bot.http.getRenmuClient()).newReply(oid, type);
       const params: {
         message: string;
         plat: 1;
@@ -399,7 +399,7 @@ export class CommentAPI
         let video: unknown;
         try
         {
-          video = await this.bot.http.getRenmuClient().video.info({ bvid });
+          video = await (await this.bot.http.getRenmuClient()).video.info({ bvid });
         }
         catch (error)
         {

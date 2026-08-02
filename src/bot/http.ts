@@ -4,7 +4,7 @@ import { logInfo, loggerError } from '../index';
 import { BilibiliDmBot } from './bot';
 import { Context, Quester } from 'koishi';
 import { v4 as uuidv4 } from 'uuid';
-import { Client, Auth, WebQrcodeLogin, utils } from '@renmu/bili-api';
+import type { Client, Auth } from '@renmu/bili-api';
 
 import { createHash } from 'node:crypto';
 import { getBilibiliAvatarProxyUrl } from '../utils/media-proxy';
@@ -15,6 +15,12 @@ const MIXIN_KEY_ENCODE_TABLE = [
   37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
   22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
+
+type BiliApiModule = typeof import('@renmu/bili-api');
+type DynamicImporter = (specifier: string) => Promise<BiliApiModule>;
+
+// 使用未被打包器改写的动态 import，兼容 Koishi 的 CommonJS 加载方式。
+const dynamicImport = new Function('specifier', 'return import(specifier)') as DynamicImporter;
 
 export class HttpClient
 {
@@ -27,8 +33,9 @@ export class HttpClient
   private myAvatarUrl = '';
   private selfId = 'unknown';
   private cookieVerified = false;
-  private readonly renmuAuth: Auth;
-  private readonly renmuClient: Client;
+  private renmuAuth: Auth | undefined;
+  private renmuClientPromise: Promise<Client> | undefined;
+  private renmuApiPromise: Promise<BiliApiModule> | undefined;
 
   public http: Quester;
   public isDisposed = false;
@@ -36,9 +43,6 @@ export class HttpClient
   constructor(private ctx: Context, config?: { selfId?: string; }, private bot?: BilibiliDmBot)
   {
     this.selfId = config?.selfId || 'unknown';
-
-    this.renmuAuth = new Auth();
-    this.renmuClient = new Client(this.renmuAuth, true);
 
     this.http = ctx.http.extend({
       headers: {
@@ -95,9 +99,22 @@ export class HttpClient
     }
   }
 
+  private async loadRenmuApi(): Promise<BiliApiModule>
+  {
+    if (!this.renmuApiPromise)
+    {
+      this.renmuApiPromise = dynamicImport('@renmu/bili-api').catch((error) =>
+      {
+        this.renmuApiPromise = undefined;
+        throw error;
+      });
+    }
+    return this.renmuApiPromise;
+  }
+
   private syncRenmuAuth(): void
   {
-    if (!this.cookies.SESSDATA || !this.cookies.bili_jct)
+    if (!this.renmuAuth || !this.cookies.SESSDATA || !this.cookies.bili_jct)
     {
       return;
     }
@@ -113,9 +130,22 @@ export class HttpClient
     );
   }
 
-  getRenmuClient(): Client
+  async getRenmuClient(): Promise<Client>
   {
-    return this.renmuClient;
+    if (!this.renmuClientPromise)
+    {
+      this.renmuClientPromise = this.loadRenmuApi().then((api) =>
+      {
+        this.renmuAuth = new api.Auth();
+        this.syncRenmuAuth();
+        return new api.Client(this.renmuAuth, true);
+      }).catch((error) =>
+      {
+        this.renmuClientPromise = undefined;
+        throw error;
+      });
+    }
+    return this.renmuClientPromise;
   }
 
   setCookies(cookies: BilibiliCookie)
@@ -256,7 +286,8 @@ export class HttpClient
 
   async getWbiSignature(params: Record<string, string | number>): Promise<{ w_rid: string; wts: number; }>
   {
-    const signedQuery = await utils.WbiSign({ ...params });
+    const api = await this.loadRenmuApi();
+    const signedQuery = await api.utils.WbiSign({ ...params });
     const searchParams = new URLSearchParams(signedQuery);
     const w_rid = searchParams.get('w_rid');
     const wts = searchParams.get('wts');
@@ -278,7 +309,8 @@ export class HttpClient
   {
     return this.safeRequest(async () =>
     {
-      const login = new WebQrcodeLogin();
+      const api = await this.loadRenmuApi();
+      const login = new api.WebQrcodeLogin();
       const res = await login.getQrcode();
       return { url: res.url, qrcode_key: res.qrcode_key };
     }, '获取二维码数据时发生网络错误', null);
@@ -288,7 +320,8 @@ export class HttpClient
   {
     return this.safeRequest(async () =>
     {
-      const login = new WebQrcodeLogin();
+      const api = await this.loadRenmuApi();
+      const login = new api.WebQrcodeLogin();
       const res = await login.poll(qrcodeKey);
       const data = res.data;
 
@@ -385,7 +418,7 @@ export class HttpClient
         return { nickname: '', avatar: '', isValid: false };
       }
 
-      const res = await this.renmuClient.user.getMyInfo();
+      const res = await (await this.getRenmuClient()).user.getMyInfo();
       this.setCookieVerified(true);
 
       const avatarUrl = getBilibiliAvatarProxyUrl(this.ctx, res.profile.face);
@@ -410,7 +443,7 @@ export class HttpClient
         return null;
       }
 
-      const res = await this.renmuClient.user.getUserInfo(uid, true);
+      const res = await (await this.getRenmuClient()).user.getUserInfo(uid, true);
       return { nickname: res.name, avatar: res.face };
     }, `获取B站用户${userId} 信息时发生网络错误`, null);
   }
