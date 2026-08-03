@@ -158,7 +158,7 @@ export class DynamicAPI
       }
       try
       {
-        const response = await (await this.bot.http.getRenmuClient()).user.space(Number(uid), offset ? Number(offset) : undefined, true);
+        const response = await this.bot.http.getRenmuClient().user.space(Number(uid), offset ? Number(offset) : undefined, true);
         const feed = response as unknown as DynamicFeedResponse;
         if (feed?.items)
         {

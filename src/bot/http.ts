@@ -4,12 +4,9 @@ import { logInfo, loggerError } from '../index';
 import { BilibiliDmBot } from './bot';
 import { Context, Quester } from 'koishi';
 import { v4 as uuidv4 } from 'uuid';
-import type { Client, Auth } from '@renmu/bili-api';
+import { Auth, Client, WebQrcodeLogin } from '@renmu/bili-api';
 
 import { createHash } from 'node:crypto';
-import { createRequire } from 'node:module';
-import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { getBilibiliAvatarProxyUrl } from '../utils/media-proxy';
 
 const MIXIN_KEY_ENCODE_TABLE = [
@@ -19,71 +16,35 @@ const MIXIN_KEY_ENCODE_TABLE = [
   22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
 
-type RenmuUser = Client['user'];
-type RenmuSearch = Client['search'];
-type RenmuVideo = Client['video'];
-type RenmuLive = Client['live'];
-type RenmuReply = Awaited<ReturnType<Client['newReply']>>;
-
-interface RenmuClient
+interface RenmuAuthLike
 {
-  user: RenmuUser;
-  search: RenmuSearch;
-  video: RenmuVideo;
-  live: RenmuLive;
-  newReply(oid: number, type: number): Promise<RenmuReply>;
+  setAuth(cookie: { bili_jct: string; SESSDATA: string; DedeUserID: string | number; }, uid: number): void;
 }
 
-interface RenmuAuthModule
+interface RenmuReplyLike
 {
-  default: new () => Auth;
+  add(params: { message: string; plat: 1; root?: number; parent?: number; }): Promise<unknown>;
 }
 
-interface RenmuLoginModule
+interface RenmuClientLike
 {
-  WebQrcodeLogin: new () => WebQrcodeLoginLike;
+  user: {
+    getMyInfo(): Promise<{ profile: { name: string; face: string; }; }>;
+    getUserInfo(uid: number, useCookie?: boolean): Promise<{ name: string; face: string; }>;
+    space(mid: number, offset?: number, useCookie?: boolean): Promise<unknown>;
+  };
+  search: {
+    all(params: { keyword: string; page: number; page_size: number; }, useCookie?: boolean): Promise<Record<string, unknown>>;
+    type(params: Record<string, unknown>, useCookie?: boolean): Promise<Record<string, unknown>>;
+  };
+  video: {
+    info(params: { bvid: string; }): Promise<unknown>;
+  };
+  live: {
+    getRoomInfo(roomId: number, useCookie?: boolean): Promise<unknown>;
+  };
+  newReply(oid: number, type: number): Promise<RenmuReplyLike>;
 }
-
-interface RenmuUserModule
-{
-  default: new (auth?: Auth, useCookie?: boolean) => RenmuUser;
-}
-
-interface RenmuSearchModule
-{
-  default: new (auth?: Auth, useCookie?: boolean) => RenmuSearch;
-}
-
-interface RenmuVideoModule
-{
-  default: new (auth?: Auth, useCookie?: boolean) => RenmuVideo;
-}
-
-interface RenmuLiveModule
-{
-  default: new (auth?: Auth, useCookie?: boolean) => RenmuLive;
-}
-
-interface RenmuReplyModule
-{
-  default: new (auth?: Auth, useCookie?: boolean, oid?: number, type?: number) => RenmuReply;
-}
-
-interface WebQrcodeLoginLike
-{
-  getQrcode(): Promise<{ url: string; qrcode_key: string; }>;
-  poll(qrcodeKey: string): Promise<{ data: {
-    code: number;
-    url?: string;
-    message?: string;
-  }; }>;
-}
-
-type DynamicImporter = <T>(specifier: string) => Promise<T>;
-
-// 使用未被打包器改写的动态 import，兼容 Koishi 的 CommonJS 加载方式。
-const dynamicImport = new Function('specifier', 'return import(specifier)') as DynamicImporter;
-const resolvePackage = createRequire(__filename);
 
 export class HttpClient
 {
@@ -96,8 +57,8 @@ export class HttpClient
   private myAvatarUrl = '';
   private selfId = 'unknown';
   private cookieVerified = false;
-  private renmuAuth: Auth | undefined;
-  private renmuClientPromise: Promise<RenmuClient> | undefined;
+  private readonly renmuAuth: RenmuAuthLike;
+  private readonly renmuClient: RenmuClientLike;
 
   public http: Quester;
   public isDisposed = false;
@@ -115,6 +76,9 @@ export class HttpClient
       timeout: 10000,
     });
     this.deviceId = this.generateDeviceId();
+    const renmuAuth = new Auth();
+    this.renmuAuth = renmuAuth;
+    this.renmuClient = new Client(renmuAuth, true) as unknown as RenmuClientLike;
 
     logInfo(`HttpClient初始化，selfId=${this.selfId}`);
 
@@ -139,7 +103,7 @@ export class HttpClient
         this.ctx.setTimeout(() => { }, 0);
       } catch (error)
       {
-        if (error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'INACTIVE_EFFECT')
+        if (error && typeof error === 'object' && 'code' in error && (error as { code?: string; }).code === 'INACTIVE_EFFECT')
         {
           logInfo('上下文已不活跃，跳过HTTP请求');
           this.isDisposed = true;
@@ -161,18 +125,6 @@ export class HttpClient
     }
   }
 
-  private loadRenmuModule<T>(specifier: string): Promise<T>
-  {
-    return dynamicImport<T>(specifier);
-  }
-
-  private loadRenmuFile<T>(relativePath: string): Promise<T>
-  {
-    const entry = resolvePackage.resolve('@renmu/bili-api');
-    const file = path.resolve(path.dirname(entry), relativePath);
-    return this.loadRenmuModule<T>(pathToFileURL(file).href);
-  }
-
   private syncRenmuAuth(): void
   {
     if (!this.renmuAuth || !this.cookies.SESSDATA || !this.cookies.bili_jct)
@@ -191,36 +143,9 @@ export class HttpClient
     );
   }
 
-  async getRenmuClient(): Promise<RenmuClient>
+  getRenmuClient(): RenmuClientLike
   {
-    if (!this.renmuClientPromise)
-    {
-      this.renmuClientPromise = Promise.all([
-        this.loadRenmuFile<RenmuAuthModule>('base/Auth.js'),
-        this.loadRenmuFile<RenmuUserModule>('user/index.js'),
-        this.loadRenmuFile<RenmuSearchModule>('search/index.js'),
-        this.loadRenmuFile<RenmuVideoModule>('video/index.js'),
-        this.loadRenmuFile<RenmuLiveModule>('live/index.js'),
-        this.loadRenmuFile<RenmuReplyModule>('video/reply.js'),
-      ]).then(([authModule, userModule, searchModule, videoModule, liveModule, replyModule]) =>
-      {
-        this.renmuAuth = new authModule.default();
-        this.syncRenmuAuth();
-        const auth = this.renmuAuth;
-        return {
-          user: new userModule.default(auth, true),
-          search: new searchModule.default(auth, true),
-          video: new videoModule.default(auth, true),
-          live: new liveModule.default(auth, true),
-          newReply: async (oid: number, type: number) => new replyModule.default(auth, true, oid, type),
-        };
-      }).catch((error) =>
-      {
-        this.renmuClientPromise = undefined;
-        throw error;
-      });
-    }
-    return this.renmuClientPromise;
+    return this.renmuClient;
   }
 
   setCookies(cookies: BilibiliCookie)
@@ -380,8 +305,7 @@ export class HttpClient
   {
     return this.safeRequest(async () =>
     {
-      const loginModule = await this.loadRenmuFile<RenmuLoginModule>('user/login.js');
-      const login = new loginModule.WebQrcodeLogin();
+      const login = new WebQrcodeLogin();
       const res = await login.getQrcode();
       return { url: res.url, qrcode_key: res.qrcode_key };
     }, '获取二维码数据时发生网络错误', null);
@@ -391,23 +315,22 @@ export class HttpClient
   {
     return this.safeRequest(async () =>
     {
-      const loginModule = await this.loadRenmuFile<RenmuLoginModule>('user/login.js');
-      const login = new loginModule.WebQrcodeLogin();
+      const login = new WebQrcodeLogin();
       const res = await login.poll(qrcodeKey);
       const data = res.data;
 
-        if (data.code === 0 && data.url)
+      if (data.code === 0 && data.url)
+      {
+        const url = new URL(data.url);
+        const SESSDATA = url.searchParams.get('SESSDATA');
+        const bili_jct = url.searchParams.get('bili_jct');
+        const DedeUserID = url.searchParams.get('DedeUserID');
+        if (SESSDATA && bili_jct && DedeUserID)
         {
-          const url = new URL(data.url);
-          const SESSDATA = url.searchParams.get('SESSDATA');
-          const bili_jct = url.searchParams.get('bili_jct');
-          const DedeUserID = url.searchParams.get('DedeUserID');
-          if (SESSDATA && bili_jct && DedeUserID)
-          {
-            return { status: 'success', message: '登录成功', cookies: { SESSDATA, bili_jct, DedeUserID } };
-          }
+          return { status: 'success', message: '登录成功', cookies: { SESSDATA, bili_jct, DedeUserID } };
+        }
 
-          return { status: 'success', message: '登录成功', loginUrl: data.url };
+        return { status: 'success', message: '登录成功', loginUrl: data.url };
       }
 
       if (data.code === 86038)
@@ -489,7 +412,7 @@ export class HttpClient
         return { nickname: '', avatar: '', isValid: false };
       }
 
-      const res = await (await this.getRenmuClient()).user.getMyInfo();
+      const res = await this.getRenmuClient().user.getMyInfo();
       this.setCookieVerified(true);
 
       const avatarUrl = getBilibiliAvatarProxyUrl(this.ctx, res.profile.face);
@@ -514,7 +437,7 @@ export class HttpClient
         return null;
       }
 
-      const res = await (await this.getRenmuClient()).user.getUserInfo(uid, true);
+      const res = await this.getRenmuClient().user.getUserInfo(uid, true);
       return { nickname: res.name, avatar: res.face };
     }, `获取B站用户${userId} 信息时发生网络错误`, null);
   }

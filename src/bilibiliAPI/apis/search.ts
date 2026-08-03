@@ -50,8 +50,8 @@ export class SearchAPI
     try
     {
       logInfo(`开始综合搜索: ${keyword}`);
-      const res = await (await this.bot.http.getRenmuClient()).search.all({ keyword, page: 1, page_size: 20 }, true);
-      return res as ComprehensiveSearchResponse;
+      const res = await this.bot.http.getRenmuClient().search.all({ keyword, page: 1, page_size: 20 }, true);
+      return res as unknown as ComprehensiveSearchResponse;
     } catch (error)
     {
       loggerError('综合搜索时发生错误: ', error);
@@ -64,7 +64,7 @@ export class SearchAPI
     try
     {
       logInfo(`开始搜索用户: ${keyword}`);
-      const res = await (await this.bot.http.getRenmuClient()).search.type({
+      const res = await this.bot.http.getRenmuClient().search.type({
         search_type: 'bili_user',
         keyword,
         page: options.page || 1,
@@ -88,7 +88,7 @@ export class SearchAPI
     try
     {
       logInfo(`开始搜索视频: ${keyword}`);
-      const res = await (await this.bot.http.getRenmuClient()).search.type({
+      const res = await this.bot.http.getRenmuClient().search.type({
         search_type: 'video',
         keyword,
         page: options.page || 1,
@@ -112,7 +112,7 @@ export class SearchAPI
     try
     {
       logInfo(`开始搜索直播: ${keyword}`);
-      const res = await (await this.bot.http.getRenmuClient()).search.type({
+      const res = await this.bot.http.getRenmuClient().search.type({
         search_type: 'live',
         keyword,
         page: options.page || 1,
@@ -135,7 +135,7 @@ export class SearchAPI
     try
     {
       logInfo(`开始搜索专栏: ${keyword}`);
-      const res = await (await this.bot.http.getRenmuClient()).search.type({
+      const res = await this.bot.http.getRenmuClient().search.type({
         search_type: 'article',
         keyword,
         page: options.page || 1,

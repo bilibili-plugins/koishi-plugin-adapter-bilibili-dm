@@ -13,7 +13,7 @@ export class LiveRoomAPI
   {
     try
     {
-      const response = await (await this.bot.http.getRenmuClient()).live.getRoomInfo(roomId, true);
+      const response = await this.bot.http.getRenmuClient().live.getRoomInfo(roomId, true);
       return response as unknown as LiveRoomInfo;
     }
     catch (error)

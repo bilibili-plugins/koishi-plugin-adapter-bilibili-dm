@@ -189,7 +189,7 @@ export class UserAPI
     {
       try
       {
-        const userInfo = await (await this.bot.http.getRenmuClient()).user.getUserInfo(Number(uid), true);
+        const userInfo = await this.bot.http.getRenmuClient().user.getUserInfo(Number(uid), true);
         if (userInfo)
         {
           logInfo(`成功获取用户 ${uid} 的信息`);

@@ -19,7 +19,7 @@ export class VideoAPI
       }
 
       // 视频详情由新包统一请求，保持旧接口返回的数据结构。
-      const response = await (await this.bot.http.getRenmuClient()).video.info({ bvid });
+      const response = await this.bot.http.getRenmuClient().video.info({ bvid });
       if (!response || typeof response !== 'object' || !('bvid' in response))
       {
         loggerError(`获取视频信息失败: ${bvid}`);
