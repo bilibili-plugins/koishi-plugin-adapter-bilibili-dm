@@ -35,6 +35,12 @@ export interface BilibiliCommentTarget
   parent: number;
 }
 
+export interface BilibiliCommentMention
+{
+  id: string;
+  name: string;
+}
+
 type JsonRecord = Record<string, unknown>;
 
 function asRecord(value: unknown): JsonRecord | null
@@ -138,17 +144,27 @@ function getMentions(records: JsonRecord[]): BilibiliMention[]
   const mentions = new Map<string, BilibiliMention>();
   for (const record of records)
   {
-    const details = record.at_details || record.atDetails;
-    if (!Array.isArray(details)) continue;
+    const detailSources = [
+      record.at_details,
+      record.atDetails,
+      record.mentions,
+      record.mention_details,
+    ];
 
-    for (const detailValue of details)
+    for (const source of detailSources)
     {
-      const detail = asRecord(detailValue);
-      if (!detail) continue;
+      if (!Array.isArray(source)) continue;
 
-      const id = readString(detail, 'mid', 'uid', 'user_id', 'mention_uid');
-      const name = readString(detail, 'name', 'uname', 'nickname', 'username');
-      if (id && name) mentions.set(`${id}:${name}`, { id, name });
+      for (const detailValue of source)
+      {
+        const detail = asRecord(detailValue);
+        if (!detail) continue;
+
+        const user = asRecord(detail.user) || asRecord(detail.member) || detail;
+        const id = readString(user, 'mid', 'mid_str', 'uid', 'user_id', 'mention_uid');
+        const name = readString(user, 'name', 'uname', 'nickname', 'username');
+        if (id && name) mentions.set(`${id}:${name}`, { id, name });
+      }
     }
   }
   return [...mentions.values()];
@@ -221,7 +237,7 @@ export class CommentAPI
     return this.isPolling;
   }
 
-  async sendComment(channelId: string, content: string, target?: BilibiliCommentTarget): Promise<string | null>
+  async sendComment(channelId: string, content: string, target?: BilibiliCommentTarget, mentions: BilibiliCommentMention[] = []): Promise<string | null>
   {
     try
     {
@@ -251,11 +267,25 @@ export class CommentAPI
         plat: 1;
         root?: number;
         parent?: number;
+        at_name_to_mid?: string;
       } = { message: content, plat: 1 };
 
       // 回复收到的评论本身，而不是给帖子发送一级评论。
-      params.root = target.rpid;
+      // 回复子评论时，root 使用根评论，parent 使用当前评论。
+      params.root = target.root || target.rpid;
       params.parent = target.rpid;
+      if (mentions.length > 0)
+      {
+        const atNameToMid: Record<string, string> = {};
+        for (const mention of mentions)
+        {
+          if (mention.id && mention.name) atNameToMid[mention.name] = mention.id;
+        }
+        if (Object.keys(atNameToMid).length > 0)
+        {
+          params.at_name_to_mid = JSON.stringify(atNameToMid);
+        }
+      }
 
       const result = await reply.add(params);
       const resultRecord = asRecord(result);
@@ -265,9 +295,13 @@ export class CommentAPI
       const returnedType = readNumber(resultRecord, 'type') || readNumber(replyRecord, 'type');
       const returnedRoot = readNumber(resultRecord, 'root') || readNumber(replyRecord, 'root');
       const returnedParent = readNumber(resultRecord, 'parent') || readNumber(replyRecord, 'parent');
+      const expectedRoot = target.root || target.rpid;
 
-      if (rpid && returnedOid === oid && returnedType === type
-        && returnedRoot === target.rpid && returnedParent === target.rpid)
+      if (rpid
+        && (!returnedOid || returnedOid === oid)
+        && (!returnedType || returnedType === type)
+        && (!returnedRoot || returnedRoot === expectedRoot)
+        && (!returnedParent || returnedParent === target.rpid))
       {
         logInfo(`评论回复发送成功，频道: ${channelId}，目标评论: ${target.rpid}，评论ID: ${rpid}`);
         return String(rpid);

@@ -6,7 +6,7 @@ import { BilibiliMessageEncoder } from './messageEncoder';
 import { Internal } from '../bilibiliAPI/internal';
 import { logInfo, loggerError } from '../index';
 import { BilibiliCookie, PrivateMessage } from './types';
-import { BilibiliCommentNotification, BilibiliCommentTarget } from '../bilibiliAPI/apis/comment';
+import { BilibiliCommentMention, BilibiliCommentNotification, BilibiliCommentTarget } from '../bilibiliAPI/apis/comment';
 import { PluginConfig } from './types';
 import { HttpClient } from './http';
 import { shouldBlockMessage } from './utils';
@@ -934,7 +934,10 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
     logInfo(content);
 
-    const processedContent = this.preprocessContent(content);
+    const parsedContent = typeof content === 'string' && /<at\b[^>]*\/\s*>/i.test(content)
+      ? h.parse(content)
+      : content;
+    const processedContent = this.preprocessContent(parsedContent);
 
     const encoder = new BilibiliMessageEncoder(this, channelId, undefined, {});
     const messages = await encoder.send(processedContent);
@@ -942,10 +945,10 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
     return messages.map(message => message.id).filter(id => id !== undefined) as string[];
   }
 
-  async sendComment(channelId: string, content: string): Promise<string | null>
+  async sendComment(channelId: string, content: string, mentions: BilibiliCommentMention[] = []): Promise<string | null>
   {
     const target = this.commentTargets.get(channelId);
-    return this.internal.sendComment(channelId, content, target);
+    return this.internal.sendComment(channelId, content, target, mentions);
   }
 
   async receiveComment(notification: BilibiliCommentNotification): Promise<void>
@@ -1010,7 +1013,8 @@ export class BilibiliDmBot extends Bot<Context, PluginConfig>
 
     candidates.sort((left, right) => right.name.length - left.name.length);
     const escapedNames = candidates.map(mention => mention.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const mentionPattern = new RegExp(`@(${escapedNames.join('|')})(?:[ \\t]+|$)`, 'g');
+    // 提及名称来自通知元数据，名称后可以没有空格，直接连接正文。
+    const mentionPattern = new RegExp(`@(${escapedNames.join('|')})(?:\\s*|$)`, 'g');
     const elements: h[] = [];
     let cursor = 0;
     for (const match of content.matchAll(mentionPattern))

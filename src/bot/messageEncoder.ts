@@ -2,10 +2,12 @@
 import { Context, MessageEncoder, h } from 'koishi';
 import { loggerError } from '../index';
 import { BilibiliDmBot } from './bot';
+import { BilibiliCommentMention } from '../bilibiliAPI/apis/comment';
 
 export class BilibiliMessageEncoder extends MessageEncoder<Context, BilibiliDmBot>
 {
   private textBuffer = '';
+  private readonly mentions = new Map<string, BilibiliCommentMention>();
 
   async flush(): Promise<void>
   {
@@ -46,6 +48,8 @@ export class BilibiliMessageEncoder extends MessageEncoder<Context, BilibiliDmBo
     const MAX_LENGTH = 470; // B站限制500字符，这里留一些余地
     let textToSend = this.textBuffer.replace(/\n+/g, '\n').trim();
     this.textBuffer = '';
+    const mentions = [...this.mentions.values()];
+    this.mentions.clear();
 
     while (this.calculateCharCount(textToSend) > 0)
     {
@@ -103,7 +107,7 @@ export class BilibiliMessageEncoder extends MessageEncoder<Context, BilibiliDmBo
         const msgContent = { content: currentChunk };
         const msgKey = type === 'private'
           ? await this.bot.http.sendMessage(this.bot.selfId, Number(talkerId), JSON.stringify(msgContent), 1)
-          : await this.bot.sendComment(this.channelId, currentChunk);
+          : await this.bot.sendComment(this.channelId, currentChunk, mentions);
         if (msgKey)
         {
           this.results.push({ id: msgKey });
@@ -145,6 +149,18 @@ export class BilibiliMessageEncoder extends MessageEncoder<Context, BilibiliDmBo
       case 'br':
         this.textBuffer += '\n';
         break;
+
+      case 'at':
+      {
+        const id = String(attrs.id || '');
+        const name = String(attrs.name || id);
+        if (name)
+        {
+          this.textBuffer += `@${name}`;
+          if (id) this.mentions.set(`${id}:${name}`, { id, name });
+        }
+        break;
+      }
 
       case 'image':
       case 'img':
