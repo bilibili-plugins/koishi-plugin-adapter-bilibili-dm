@@ -45,12 +45,17 @@ jobs:
       - name: Build VitePress Site
         run: cd docs && yarn build
 
+      - name: Disable Jekyll processing
+        run: touch docs/docs/.vitepress/dist/.nojekyll
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/docs/.vitepress/dist
           publish_branch: gh-pages
+          destination_dir: docs
           force_orphan: true
+          enable_jekyll: false
           user_name: "github-actions[bot]"
           user_email: "github-actions[bot]@users.noreply.github.com"
