@@ -58,7 +58,6 @@ yarn add koishi-plugin-adapter-bilibili-dm
 
 <img src="https://i0.hdslb.com/bfs/openplatform/d3f604c1b732ff83f0874ee89027dda8e4c3031a.png" alt="登录认证" referrerpolicy="no-referrer" width="500">
 
-
 ## 验证安装
 
 配置完成后，你可以：
