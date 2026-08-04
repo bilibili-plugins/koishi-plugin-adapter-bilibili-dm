@@ -8,6 +8,10 @@ on:
       - 'docs/**' # 仅在 docs 目录下的文件发生更改时触发
   workflow_dispatch:  # 允许手动触发
 
+# gh-pages 分支需要由工作流提交并推送构建结果。
+permissions:
+  contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -18,6 +22,7 @@ jobs:
         with:
           ref: docs  # 检出 docs 分支
           path: docs  # 检出到 docs 目录
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,6 +50,7 @@ jobs:
           ref: gh-pages
           path: gh-pages
           clean: false # 保留 gh-pages 分支的内容
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create gh-pages/docs directory if it doesn't exist
         run: |
