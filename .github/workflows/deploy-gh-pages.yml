@@ -3,10 +3,10 @@ name: Deploy VitePress Docs to GitHub Pages
 on:
   push:
     branches:
-      - docs  # 在 docs 分支推送时触发
+      - docs # 在 docs 分支推送时触发
     paths:
-      - 'docs/**' # 仅在 docs 目录下的文件发生更改时触发
-  workflow_dispatch:  # 允许手动触发
+      - "docs/**" # 仅在 docs 目录下的文件发生更改时触发
+  workflow_dispatch: # 允许手动触发
 
 # 配置仓库内容和 GitHub Pages 部署权限。
 permissions:
@@ -22,8 +22,8 @@ jobs:
       - name: Checkout docs branch
         uses: actions/checkout@v4
         with:
-          ref: docs  # 检出 docs 分支
-          path: docs  # 检出到 docs 目录
+          ref: docs # 检出 docs 分支
+          path: docs # 检出到 docs 目录
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,12 +45,17 @@ jobs:
       - name: Build VitePress Site
         run: cd docs && yarn build
 
+      - name: Disable Jekyll processing
+        run: touch docs/docs/.vitepress/dist/.nojekyll
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/docs/.vitepress/dist
           publish_branch: gh-pages
+          destination_dir: docs
           force_orphan: true
+          enable_jekyll: false
           user_name: "github-actions[bot]"
           user_email: "github-actions[bot]@users.noreply.github.com"
