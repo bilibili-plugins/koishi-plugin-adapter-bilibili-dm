@@ -33,7 +33,7 @@ cd koishi-app
 3. **克隆本仓库**
 
 ```bash
-yarn clone Roberta001/koishi-plugin-adapter-bilibili-dm
+yarn clone bilibili-plugins/koishi-plugin-adapter-bilibili-dm
 ```
 
 4. **以开发模式启动**
@@ -52,6 +52,7 @@ src/
 │   ├── temp_error_codes.ts # 错误码定义
 │   └── apis/             # 各类API实现
 │       ├── dynamic.ts    # 动态相关API
+│       ├── comment.ts    # 评论通知轮询与评论回复
 │       ├── live.ts       # 直播相关API
 │       ├── liveRoom.ts   # 直播间API
 │       ├── liveWebSocket.ts # 直播WebSocket

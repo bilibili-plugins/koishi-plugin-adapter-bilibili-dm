@@ -5,7 +5,7 @@
 ## 本地开发
 
 ```bash
-git clone https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm.git
+git clone https://github.com/bilibili-plugins/koishi-plugin-adapter-bilibili-dm.git
 cd koishi-plugin-adapter-bilibili-dm
 git checkout docs
 

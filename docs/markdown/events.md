@@ -26,6 +26,7 @@ ctx.on('before-send', (session) => {
 **事件数据:** Koishi Session 对象
 
 **使用场景:**
+
 - 消息内容过滤
 - 消息格式化
 - 发送权限检查
@@ -43,6 +44,7 @@ ctx.on('send', (session) => {
 **事件数据:** Koishi Session 对象，包含已发送的消息ID
 
 **使用场景:**
+
 - 消息发送统计
 - 发送日志记录
 - 后续处理逻辑
@@ -60,6 +62,7 @@ ctx.on('message', (session) => {
 **事件数据:** Koishi Session 对象
 
 **使用场景:**
+
 - 消息处理
 - 自动回复
 - 消息统计
@@ -81,7 +84,7 @@ ctx.on('message-deleted', (session) => {
 可分为几大类事件（如动态、直播），每部分可分为`全局事件`和具体的`特定事件`。
 
 > 例如，当一个UP主发布新的图片动态时，适配器会先判断动态类型为图片动态，
-> 
+>
 > 然后先下发一个全局的动态更新事件，再下发一个图片动态事件。
 
 因此开发者一般只需要监听全局事件即可啦~
@@ -97,16 +100,22 @@ ctx.on('message-deleted', (session) => {
 ```typescript
 ctx.on('bilibili-dm/status-update', (status) => {
   console.log('插件状态更新:', status.status)
-  
+
   switch (status.status) {
-    case 'online':
-      console.log('适配器已上线')
+    case 'success':
+      console.log('登录成功或已使用缓存登录')
+      break
+    case 'qrcode':
+      console.log('等待扫码或手机确认登录')
+      break
+    case 'continue':
+      console.log('需要继续登录')
       break
     case 'offline':
       console.log('适配器已离线')
       break
-    case 'reconnect':
-      console.log('适配器正在重连')
+    case 'error':
+      console.log('登录或运行过程中发生错误')
       break
   }
 })
@@ -123,15 +132,32 @@ ctx.on('bilibili-dm-123456789/status-update', (status) => {
 ```
 
 **状态数据结构:**
+
 ```typescript
 interface StatusUpdateData {
-  status: 'online' | 'offline' | 'reconnect' | 'error'
+  status: 'init' | 'qrcode' | 'continue' | 'success' | 'error' | 'offline'
   selfId: string
-  timestamp: number
+  image?: string
   message?: string
-  error?: any
 }
 ```
+
+## 评论消息
+
+评论通知不会使用额外的自定义事件名，而是作为标准 Koishi `message` Session 下发，因此可以直接由命令和其他消息处理插件处理。
+
+```typescript
+ctx.on('message', (session) => {
+  if (session.channelId?.startsWith('video:')) {
+    console.log('收到视频评论:', session.channelId, session.content)
+  }
+  if (session.channelId?.startsWith('opus:')) {
+    console.log('收到图文动态评论:', session.channelId, session.content)
+  }
+})
+```
+
+视频评论频道格式为 `video:BV号`，图文动态评论频道格式为 `opus:动态ID`。评论文本中的 @ 会转换成 Koishi `at` 元素；当 Koishi 发送回复时，适配器会使用通知记录的 `root` 和 `parent` 回复目标评论。
 
 ## 动态相关事件
 
@@ -142,12 +168,12 @@ interface StatusUpdateData {
 ```typescript
 ctx.on('bilibili/dynamic-update', (data) => {
   console.log('动态更新:', data.author.name, data.content.text)
-  
+
   // 处理所有类型的动态
   if (data.content.images?.length > 0) {
     console.log('包含图片:', data.content.images.length, '张')
   }
-  
+
   if (data.content.bvid) {
     console.log('视频BV号:', data.content.bvid)
   }
@@ -173,7 +199,7 @@ ctx.on('bilibili/dynamic-video-update', (data) => {
 ```typescript
 ctx.on('bilibili/dynamic-image-update', (data) => {
   console.log('图片动态:', data.content.images?.length, '张图片')
-  
+
   // 处理图片
   data.content.images?.forEach((imageUrl, index) => {
     console.log(`图片 ${index + 1}:`, imageUrl)
@@ -258,6 +284,7 @@ ctx.on('bilibili/dynamic-unknown-update', (data) => {
 ```
 
 **动态事件数据结构:**
+
 ```typescript
 interface DynamicEventData {
   id: string                    // 动态ID
@@ -294,7 +321,7 @@ interface DynamicEventData {
 ```typescript
 ctx.on('bilibili/live-update', (data) => {
   console.log('直播状态更新:', data.action)
-  
+
   switch (data.action) {
     case 'start':
       console.log(`${data.author.name} 开始直播: ${data.content.title}`)

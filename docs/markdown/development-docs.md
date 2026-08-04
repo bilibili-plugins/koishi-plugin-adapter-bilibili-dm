@@ -16,7 +16,7 @@
 1. **克隆文档仓库**
 
 ```bash
-git clone https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm.git
+git clone https://github.com/bilibili-plugins/koishi-plugin-adapter-bilibili-dm.git
 ```
 
 2. **切换到文档分支**

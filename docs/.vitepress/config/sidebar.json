@@ -59,7 +59,7 @@
         "items": [
             {
                 "text": "GitHub 仓库",
-                "link": "https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm",
+                "link": "https://github.com/bilibili-plugins/koishi-plugin-adapter-bilibili-dm",
                 "target": "_blank"
             },
             {

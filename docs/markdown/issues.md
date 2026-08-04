@@ -6,7 +6,7 @@
 
 ### 在哪里提交
 
-访问 [GitHub Issues 页面](https://github.com/Roberta001/koishi-plugin-adapter-bilibili-dm/issues) 提交问题。
+访问 [GitHub Issues 页面](https://github.com/bilibili-plugins/koishi-plugin-adapter-bilibili-dm/issues) 提交问题。
 
 ### 提交前的准备
 
